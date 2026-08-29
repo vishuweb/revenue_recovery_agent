@@ -1,104 +1,224 @@
+/**
+ * Recovery Action Decision Engine
+ * 
+ * Evaluates all eligible candidate actions using Net Expected Value (NEV)
+ * optimization. Selects the action with the highest positive NEV.
+ * 
+ * If ALL candidates have NEV ≤ 0, selects `no_action` — explicitly deciding
+ * that doing nothing is the optimal financial decision.
+ * 
+ * "Do Nothing" is a first-class action, not a failure state.
+ * 
+ * Decision Pipeline:
+ *   1. Generate eligible candidate actions based on case context
+ *   2. For each candidate, compute action-specific recovery probability
+ *   3. Calculate NEV = (probability × amount) - intervention cost
+ *   4. Rank by NEV and select the winner
+ *   5. Return full candidate evaluation for decision transparency
+ */
+
+import { predictForAction } from './predictor.js';
+import { evaluateCandidates, calculateInterventionCost } from './economics.js';
+
+/**
+ * Decide the optimal recovery action for a case.
+ * 
+ * @param {Object} caseData — case row with failure_reason, attempts_made, etc.
+ * @param {Object} customerData — customer row
+ * @param {Object} classification — from classifier { category, isRetryable, baseProbability }
+ * @param {Object} prediction — from predictRecovery { probability, factors }
+ * @param {Object} priority — from calculatePriority { score, tier }
+ * @returns {{ action, reasoning, requiresApproval, scheduledDelay, discount_percent, intervention_cost, candidates, allNegativeNEV, isAIFallback }}
+ */
 export function decideAction(caseData, customerData, classification, prediction, priority) {
-  let action = 'escalate';
-  let reasoning = '';
-  let requiresApproval = false;
-  let scheduledDelay = 0; // ms
-  let discount_percent = undefined;
-  let intervention_cost = undefined;
-
   const maxAttempts = caseData.max_attempts || 5;
+  const attemptsMade = caseData.attempts_made || 0;
+  const amountAtRisk = caseData.amount_at_risk || 0;
+  const failureCategory = classification.category || 'unknown';
 
-  if (caseData.attempts_made >= maxAttempts) {
-    action = 'stop';
-    reasoning = 'Maximum retry attempts exhausted';
-  } else if (prediction.probability < 0.10) {
-    action = 'stop';
-    reasoning = 'Recovery probability too low';
-  } else if (classification.category === 'permanent' && classification.isRetryable === false) {
-    if (caseData.failure_reason === 'card_expired' || caseData.failure_reason === 'invalid_card') {
-      action = 'payment_link';
-      reasoning = 'Customer needs to update payment method';
-    } else {
-      action = 'escalate';
-      reasoning = 'Permanent failure requiring manual intervention';
-    }
-  } else if (classification.category === 'temporary' && caseData.attempts_made < 3) {
-    action = 'retry';
-    if (['gateway_error', 'network_error', 'bank_server_down'].includes(caseData.failure_reason)) {
-      scheduledDelay = 30 * 60 * 1000;
-    } else if (caseData.failure_reason === 'insufficient_funds') {
-      scheduledDelay = 6 * 60 * 60 * 1000;
-    } else if (caseData.failure_reason === 'card_declined') {
-      scheduledDelay = 24 * 60 * 60 * 1000;
-    } else if (caseData.failure_reason === 'payment_timed_out') {
-      scheduledDelay = 2 * 60 * 60 * 1000;
-    } else {
-      scheduledDelay = 60 * 60 * 1000;
-    }
-    reasoning = `Temporary failure, attempting retry after delay (${scheduledDelay/1000}s)`;
-  } else if (classification.category === 'behavioral') {
-    if (customerData.plan === 'enterprise' || customerData.lifetime_value > 500000) {
-      action = 'email';
-      reasoning = 'Behavioral failure for high-value customer, sending personalized email';
-    } else {
-      action = 'payment_link';
-      reasoning = 'Behavioral failure, sending payment link';
-    }
-  } else if (classification.category === 'abandonment' && customerData.discount_affinity > 0.5 && caseData.amount_at_risk > customerData.avg_order_value) {
-    action = 'discount';
-    reasoning = 'High value abandonment with discount affinity, offering discount';
-    scheduledDelay = 3600000;
-  } else if (classification.category === 'abandonment' && caseData.amount_at_risk > 50000) {
-    action = 'free_shipping';
-    reasoning = 'High value abandonment, offering free shipping';
-  } else if (classification.category === 'abandonment' && caseData.attempts_made < 2) {
-    action = 'cart_reminder';
-    reasoning = 'Recent abandonment, sending cart reminder';
-  } else if (classification.category === 'opportunity') {
-    const hoursToExpiry = caseData.metadata?.hours_to_expiry ?? 12;
-    // Dynamic markdown policy: If urgency is high (<18h remaining) or customer is price sensitive (>0.45 affinity)
-    if (hoursToExpiry <= 18 || (customerData && customerData.discount_affinity > 0.45)) {
-      action = 'discount';
-      if (hoursToExpiry <= 12 || (customerData && customerData.discount_affinity > 0.7)) {
-        discount_percent = 10;
-        reasoning = `Urgent inventory expiration (${hoursToExpiry}h left); applying maximum 10% salvage markdown to avoid total write-off`;
-      } else {
-        discount_percent = 5;
-        reasoning = `Expiring inventory (${hoursToExpiry}h left); deploying 5% clearance incentive for high-affinity buyer`;
-      }
-      intervention_cost = Math.round(caseData.amount_at_risk * (discount_percent / 100));
-    } else {
-      action = 'targeted_campaign';
-      reasoning = `Expiring inventory with runway (${hoursToExpiry}h left); testing full-price clearance campaign (0% discount) to protect gross margin`;
-    }
-  } else if (caseData.attempts_made >= 3 && prediction.probability > 0.3) {
-    action = 'email';
-    reasoning = 'Multiple retries failed, probability is decent, switching to email outreach';
-  } else {
-    action = 'escalate';
-    reasoning = 'Defaulting to escalation';
+  // Step 1: Build candidate action list based on eligibility
+  const candidates = [];
+
+  // Always include no_action as baseline
+  candidates.push(buildCandidate('no_action', caseData, customerData, classification, prediction, {
+    reasoning: 'Baseline: no intervention',
+  }));
+
+  // Retry — only if retryable and under max attempts
+  if (classification.isRetryable && attemptsMade < Math.min(maxAttempts, 3)) {
+    const delay = getRetryDelay(caseData.failure_reason, failureCategory);
+    candidates.push(buildCandidate('retry', caseData, customerData, classification, prediction, {
+      reasoning: `Retry after ${delay / (60 * 1000)}m delay`,
+      scheduledDelay: delay,
+    }));
   }
 
-  if (action === 'discount') {
-    if (!discount_percent) {
-      discount_percent = 5;
-      if (customerData && customerData.discount_affinity > 0.7) {
-        discount_percent = 10;
-      }
-      intervention_cost = Math.round(caseData.amount_at_risk * (discount_percent / 100));
+  // Payment link — always eligible for card issues or behavioral
+  if (['permanent', 'behavioral', 'temporary'].includes(failureCategory)) {
+    candidates.push(buildCandidate('payment_link', caseData, customerData, classification, prediction, {
+      reasoning: 'Send updated payment link',
+    }));
+  }
+
+  // Email — if customer hasn't opted out
+  if (customerData?.opted_out !== 1) {
+    candidates.push(buildCandidate('email', caseData, customerData, classification, prediction, {
+      reasoning: 'Personalized recovery email',
+    }));
+  }
+
+  // Cart reminder — only for abandonment
+  if (failureCategory === 'abandonment' && customerData?.opted_out !== 1) {
+    candidates.push(buildCandidate('cart_reminder', caseData, customerData, classification, prediction, {
+      reasoning: 'Cart abandonment reminder',
+    }));
+  }
+
+  // Discount (5%) — for abandonment or opportunity with affinity
+  if (['abandonment', 'opportunity'].includes(failureCategory)) {
+    candidates.push(buildCandidate('discount', caseData, customerData, classification, prediction, {
+      reasoning: 'Recovery incentive (5% discount)',
+      discountPercent: 5,
+    }));
+  }
+
+  // Discount (10%) — for high-affinity customers or urgent inventory
+  if (failureCategory === 'opportunity' || (failureCategory === 'abandonment' && (customerData?.discount_affinity || 0) > 0.5)) {
+    const hoursToExpiry = caseData.metadata?.hours_to_expiry ?? 999;
+    if (hoursToExpiry <= 18 || (customerData?.discount_affinity || 0) > 0.7) {
+      candidates.push(buildCandidate('discount', caseData, customerData, classification, prediction, {
+        reasoning: 'Maximum recovery incentive (10% discount)',
+        discountPercent: 10,
+      }));
     }
   }
 
-  if (caseData.amount_at_risk > 5000000 || action === 'escalate') {
+  // Free shipping — high-value abandonment
+  if (failureCategory === 'abandonment' && amountAtRisk > 50000) {
+    candidates.push(buildCandidate('free_shipping', caseData, customerData, classification, prediction, {
+      reasoning: 'Free shipping incentive for high-value cart',
+    }));
+  }
+
+  // Targeted campaign — opportunity/clearance
+  if (failureCategory === 'opportunity') {
+    candidates.push(buildCandidate('targeted_campaign', caseData, customerData, classification, prediction, {
+      reasoning: 'Full-price clearance campaign',
+    }));
+  }
+
+  // Escalate — high-value or enterprise
+  if (amountAtRisk > 2000000 || customerData?.plan === 'enterprise') {
+    candidates.push(buildCandidate('escalate', caseData, customerData, classification, prediction, {
+      reasoning: 'Escalate to human analyst',
+      requiresApproval: true,
+    }));
+  }
+
+  // Step 2: Evaluate all candidates via NEV
+  const evaluation = evaluateCandidates(amountAtRisk, candidates);
+
+  // Step 3: Build the result
+  const selected = evaluation.selected;
+
+  // Determine if approval is needed
+  let requiresApproval = selected.requiresApproval;
+  if (amountAtRisk > 5000000 || selected.action === 'escalate') {
     requiresApproval = true;
   }
 
+  // Build comprehensive reasoning
+  let reasoning = selected.reasoning;
+  if (selected.action === 'no_action' || evaluation.allNegative) {
+    reasoning = buildNoActionReasoning(caseData, customerData, classification, prediction, evaluation);
+  } else {
+    const runner_up = evaluation.candidates.find(c => !c.selected && c.nev > 0);
+    if (runner_up) {
+      reasoning += ` | NEV: ₹${(selected.nev / 100).toFixed(0)} vs runner-up ${runner_up.action}: ₹${(runner_up.nev / 100).toFixed(0)}`;
+    }
+  }
+
   return {
-    action,
+    action: selected.action,
     reasoning,
     requiresApproval,
-    scheduledDelay,
-    discount_percent,
-    intervention_cost
+    scheduledDelay: selected.scheduledDelay || 0,
+    discount_percent: selected.discountPercent || undefined,
+    intervention_cost: selected.interventionCost,
+    candidates: evaluation.candidates,
+    allNegativeNEV: evaluation.allNegative,
+    isAIFallback: false,
   };
+}
+
+/**
+ * Build a candidate object with action-specific probability.
+ */
+function buildCandidate(action, caseData, customerData, classification, prediction, overrides = {}) {
+  const discountPercent = overrides.discountPercent || 0;
+  const actionProbability = predictForAction(
+    prediction.probability,
+    action,
+    customerData,
+    caseData,
+    discountPercent
+  );
+
+  return {
+    action,
+    probability: actionProbability,
+    discountPercent,
+    reasoning: overrides.reasoning || action,
+    scheduledDelay: overrides.scheduledDelay || 0,
+    requiresApproval: overrides.requiresApproval || false,
+  };
+}
+
+/**
+ * Calculate retry delay based on failure reason.
+ */
+function getRetryDelay(failureReason, failureCategory) {
+  const RETRY_DELAYS = {
+    gateway_error: 30 * 60 * 1000,           // 30 minutes
+    network_error: 30 * 60 * 1000,
+    bank_server_down: 30 * 60 * 1000,
+    payment_timed_out: 2 * 60 * 60 * 1000,   // 2 hours
+    insufficient_funds: 6 * 60 * 60 * 1000,   // 6 hours
+    card_declined: 24 * 60 * 60 * 1000,       // 24 hours
+    subscription_failed: 6 * 60 * 60 * 1000,
+  };
+
+  return RETRY_DELAYS[failureReason] || 60 * 60 * 1000; // Default: 1 hour
+}
+
+/**
+ * Build a detailed reasoning string when no_action is selected.
+ */
+function buildNoActionReasoning(caseData, customerData, classification, prediction, evaluation) {
+  const reasons = [];
+
+  if (prediction.probability < 0.10) {
+    reasons.push(`recovery probability is ${(prediction.probability * 100).toFixed(1)}%`);
+  }
+
+  const bestPositiveAction = evaluation.candidates.find(c => c.action !== 'no_action');
+  if (bestPositiveAction && bestPositiveAction.nev <= 0) {
+    reasons.push(`best candidate (${bestPositiveAction.action}) has NEV of ₹${(bestPositiveAction.nev / 100).toFixed(0)}`);
+  }
+
+  if (caseData.attempts_made >= (caseData.max_attempts || 5)) {
+    reasons.push('maximum retry attempts exhausted');
+  }
+
+  if (customerData?.opted_out === 1) {
+    reasons.push('customer opted out of communications');
+  }
+
+  if (classification.category === 'permanent' && !classification.isRetryable) {
+    reasons.push(`permanent failure (${caseData.failure_reason})`);
+  }
+
+  const reasonText = reasons.length > 0 ? reasons.join(', ') : 'all candidates have negative net expected value';
+
+  return `No action is the optimal decision. ₹${((caseData.amount_at_risk || 0) / 100).toFixed(0)} revenue at risk, but ${reasonText}. Automated recovery stopped to avoid negative ROI.`;
 }

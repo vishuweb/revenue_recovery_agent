@@ -78,12 +78,16 @@ CREATE TABLE IF NOT EXISTS recovery_cases (
   event_id TEXT,
   intervention_cost INTEGER NOT NULL DEFAULT 0,
   amount_at_risk INTEGER NOT NULL,
+  expected_recovery INTEGER NOT NULL DEFAULT 0,
+  net_expected_value INTEGER NOT NULL DEFAULT 0,
+  candidate_actions TEXT,
   failure_reason TEXT NOT NULL,
   failure_category TEXT NOT NULL DEFAULT 'unknown',
   recovery_probability REAL NOT NULL DEFAULT 0.0,
   priority_score REAL NOT NULL DEFAULT 0.0,
   recommended_action TEXT,
   ai_reasoning TEXT,
+  attribution_type TEXT NOT NULL DEFAULT 'unknown',
   status TEXT NOT NULL DEFAULT 'open',
   current_step INTEGER NOT NULL DEFAULT 0,
   max_attempts INTEGER NOT NULL DEFAULT 5,
@@ -132,6 +136,7 @@ CREATE TABLE IF NOT EXISTS events (
   source TEXT NOT NULL DEFAULT 'system',
   amount INTEGER NOT NULL DEFAULT 0,
   metadata TEXT,
+  idempotency_key TEXT,
   processed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -175,4 +180,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_processed ON events(processed);
 CREATE INDEX IF NOT EXISTS idx_events_customer ON events(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency ON events(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_recovery_cases_attribution ON recovery_cases(attribution_type);
 CREATE INDEX IF NOT EXISTS idx_dataset_runs_created ON dataset_runs(created_at DESC);

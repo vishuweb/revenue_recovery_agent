@@ -289,13 +289,83 @@ export default function CaseDetailPage({ params }) {
           </div>
 
           <div style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--glass-border)', borderRadius: 'var(--border-radius-card)', padding: '16px', marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Strategy Rationale
-            </h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h4 style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Strategy Rationale
+              </h4>
+              {c.attribution_type && c.attribution_type !== 'unknown' && (
+                <span className={`badge ${c.attribution_type === 'recovered' ? 'success' : c.attribution_type === 'organic' ? 'warning' : 'primary'}`} style={{ fontSize: '10px' }}>
+                  Attribution: {c.attribution_type}
+                </span>
+              )}
+            </div>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               {c.ai_reasoning || 'Based on customer tenure, payment method error type, and recovery probability model, this tailored notification combined with smart retry scheduling maximizes payment conversion while minimizing churn risk.'}
             </p>
           </div>
+
+          {/* NEV Candidate Evaluation Matrix */}
+          {c.candidate_actions && (() => {
+            try {
+              const candidates = typeof c.candidate_actions === 'string' ? JSON.parse(c.candidate_actions) : c.candidate_actions;
+              if (!Array.isArray(candidates) || candidates.length === 0) return null;
+              return (
+                <div style={{ marginBottom: '20px', background: 'var(--bg-subtle)', border: '1px solid var(--glass-border)', borderRadius: 'var(--border-radius-card)', padding: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Candidate Action NEV Matrix (Net Expected Value Optimization)
+                    </span>
+                    <span style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>
+                      NEV = (Prob × Risk) - Cost
+                    </span>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="table" style={{ fontSize: '11.5px', margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th>Action Candidate</th>
+                          <th>Win Prob</th>
+                          <th>Expected Recovery</th>
+                          <th>Intervention Cost</th>
+                          <th>Net Expected Value</th>
+                          <th>Decision Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {candidates.map((cand, idx) => {
+                          const isSel = cand.selected || cand.action === c.recommended_action;
+                          return (
+                            <tr key={idx} style={{ background: isSel ? 'rgba(37, 99, 235, 0.1)' : undefined }}>
+                              <td style={{ fontWeight: isSel ? 700 : 500, color: isSel ? '#93c5fd' : 'var(--text-primary)' }}>
+                                {cand.action} {cand.discountPercent ? `(${cand.discountPercent}%)` : ''}
+                              </td>
+                              <td className="font-mono">{Math.round((cand.probability || 0) * 100)}%</td>
+                              <td className="font-mono">{formatCurrency(cand.expectedRecovery || 0)}</td>
+                              <td className="font-mono" style={{ color: cand.interventionCost > 0 ? '#fb7185' : 'var(--text-dim)' }}>
+                                {formatCurrency(cand.interventionCost || 0)}
+                              </td>
+                              <td className="font-mono" style={{ fontWeight: 700, color: cand.nev > 0 ? '#34d399' : '#fb7185' }}>
+                                {formatCurrency(cand.nev || 0)}
+                              </td>
+                              <td>
+                                {isSel ? (
+                                  <span className="badge success" style={{ fontSize: '9.5px' }}>SELECTED (OPTIMAL)</span>
+                                ) : cand.nev <= 0 ? (
+                                  <span className="badge danger" style={{ fontSize: '9.5px' }}>NEGATIVE NEV</span>
+                                ) : (
+                                  <span className="badge secondary" style={{ fontSize: '9.5px' }}>RUNNER UP</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            } catch (e) { return null; }
+          })()}
 
           {/* Action Dispatcher Controls */}
           <div>

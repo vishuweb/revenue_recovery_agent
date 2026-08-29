@@ -30,6 +30,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   let interventionsCount = 0;
   let escalationsCount = 0;
   let stoppedCount = 0;
+  let noActionCount = 0;
   const uniqueCustomersSet = new Set();
 
   const funnel = {
@@ -159,15 +160,21 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     }
 
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const selectedCandidate = decision.candidates ? decision.candidates.find(c => c.selected) : null;
+    const expectedRecovery = selectedCandidate ? (selectedCandidate.expectedRecovery || 0) : 0;
+    const nev = selectedCandidate ? (selectedCandidate.nev || 0) : 0;
+
     db.prepare(`
       INSERT INTO recovery_cases (
-        id, customer_id, payment_id, amount_at_risk, intervention_cost, failure_reason,
+        id, customer_id, payment_id, amount_at_risk, expected_recovery, net_expected_value,
+        candidate_actions, intervention_cost, failure_reason,
         failure_category, recovery_probability, priority_score, recommended_action,
         ai_reasoning, status, current_step, max_attempts, attempts_made, recovered_amount,
         opened_at, expires_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      caseId, customer.id, paymentId, amountAtRisk, interventionCost, row.failure_reason,
+      caseId, customer.id, paymentId, amountAtRisk, expectedRecovery, nev,
+      decision.candidates ? JSON.stringify(decision.candidates) : null, interventionCost, row.failure_reason,
       classification.category, prediction.probability, priority.score, decision.action,
       decision.reasoning, 'open', 1, 5, row.retry_count || 0, 0,
       caseData.opened_at, expiresAt, now.toISOString()

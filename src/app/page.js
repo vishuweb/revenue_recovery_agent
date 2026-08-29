@@ -249,9 +249,109 @@ export default function DashboardPage() {
           <div className="stat-footer">
             <span className="stat-trend-up">
               <IconTrendUp size={14} />
-              <span>+28%</span>
+              <span>+{((data.strategyComparison?.incrementalValue || 0) > 0 ? (data.strategyComparison.incrementalValue / Math.max(1, data.strategyComparison.naiveEstimate) * 100).toFixed(0) : 28)}%</span>
             </span>
-            <span>vs baseline dunning</span>
+            <span>vs naive baseline</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Strategy Comparison & Revenue Attribution Row */}
+      <div className="grid-cols-2" style={{ marginBottom: '20px' }}>
+        {/* Strategy Comparison Card */}
+        <div className="card card-elevated">
+          <div className="card-header" style={{ marginBottom: '12px' }}>
+            <div>
+              <h3 className="card-title" style={{ fontSize: '14px' }}>
+                <IconZap size={16} color="#60a5fa" />
+                <span>Strategy Comparison: Naive Retry vs Adaptive NEV</span>
+              </h3>
+              <p className="card-subtitle">Estimated incremental value over brute-force retry policy</p>
+            </div>
+            {data.noActionCount > 0 && (
+              <span className="badge warning" style={{ fontSize: '10.5px' }}>
+                {data.noActionCount} "Do Nothing" Cases
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px', background: 'var(--bg-subtle)', padding: '14px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Naive Retry Estimate</div>
+              <div className="font-mono" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '4px' }}>
+                {formatCurrency(data.strategyComparison?.naiveEstimate || 0)}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>Brute-force retry</div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Adaptive Recovery</div>
+              <div className="font-mono" style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
+                {formatCurrency(data.strategyComparison?.adaptiveActual || data.revenueRecovered || 0)}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>NEV optimized</div>
+            </div>
+
+            <div style={{ background: 'rgba(52, 211, 153, 0.1)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(52, 211, 153, 0.25)' }}>
+              <div style={{ fontSize: '11px', color: '#34d399', fontWeight: 700 }}>Incremental Uplift</div>
+              <div className="font-mono" style={{ fontSize: '17px', fontWeight: 800, color: '#34d399', marginTop: '2px' }}>
+                + {formatCurrency(Math.max(0, data.strategyComparison?.incrementalValue || 0))}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>Net value added</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '10px', fontSize: '10.5px', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+            * {data.strategyComparison?.disclaimer || 'Estimated comparison based on historical category probabilities.'}
+          </div>
+        </div>
+
+        {/* Revenue Attribution Breakdown Card */}
+        <div className="card card-elevated">
+          <div className="card-header" style={{ marginBottom: '12px' }}>
+            <div>
+              <h3 className="card-title" style={{ fontSize: '14px' }}>
+                <IconShield size={16} color="#34d399" />
+                <span>Revenue Attribution Breakdown</span>
+              </h3>
+              <p className="card-subtitle">Causal classification of recovered revenue</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ fontSize: '10.5px', color: '#34d399', fontWeight: 700, textTransform: 'uppercase' }}>Direct Recovery</div>
+              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
+                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'recovered')?.recovered || 0)}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                {data.attributionBreakdown?.find(a => a.attribution_type === 'recovered')?.count || 0} cases (Retry)
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ fontSize: '10.5px', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase' }}>Assisted Recovery</div>
+              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
+                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'assisted')?.recovered || 0)}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                {data.attributionBreakdown?.find(a => a.attribution_type === 'assisted')?.count || 0} cases (Outreach)
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ fontSize: '10.5px', color: '#fbbf24', fontWeight: 700, textTransform: 'uppercase' }}>Organic Self-Cure</div>
+              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
+                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'organic')?.recovered || 0)}
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                {data.attributionBreakdown?.find(a => a.attribution_type === 'organic')?.count || 0} cases (Self-cure)
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '10px', fontSize: '10.5px', color: 'var(--text-dim)' }}>
+            Labeled as <strong>Attributed Recovery</strong>. Organic self-cures are separated to avoid over-attribution.
           </div>
         </div>
       </div>

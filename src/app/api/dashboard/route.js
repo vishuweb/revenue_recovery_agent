@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db/database'
+import { estimateNaiveBaseline } from '@/lib/engine/attribution'
 
 export async function GET() {
   try {
@@ -10,8 +11,8 @@ export async function GET() {
     const revenueRecoveredRow = db.prepare(`SELECT SUM(recovered_amount) as sum FROM recovery_cases WHERE status = 'recovered'`).get()
     const failedCasesAtRiskRow = db.prepare(`SELECT SUM(amount_at_risk) as sum FROM recovery_cases WHERE status = 'failed'`).get()
     
-    const revenueRecovered = revenueRecoveredRow.sum || 0
-    const failedCasesAtRisk = failedCasesAtRiskRow.sum || 0
+    const revenueRecovered = revenueRecoveredRow?.sum || 0
+    const failedCasesAtRisk = failedCasesAtRiskRow?.sum || 0
     const recoveryRate = revenueRecovered + failedCasesAtRisk > 0 
       ? (revenueRecovered / (revenueRecovered + failedCasesAtRisk)) * 100 
       : 0
@@ -53,8 +54,13 @@ export async function GET() {
       if (statusBreakdown[row.status] !== undefined) statusBreakdown[row.status] = row.count
     }
 
-    const interventionCostRow = db.prepare(`SELECT COALESCE(SUM(intervention_cost), 0) as sum FROM recovery_cases`).get()
-    const interventionCost = interventionCostRow.sum || 0
+    let interventionCost = 0
+    try {
+      const interventionCostRow = db.prepare(`SELECT COALESCE(SUM(intervention_cost), 0) as sum FROM recovery_cases`).get()
+      interventionCost = interventionCostRow?.sum || 0
+    } catch (e) {
+      // column might not exist in old schema
+    }
     const netRecovery = revenueRecovered - interventionCost
 
     const recoveryByAction = db.prepare(`
@@ -77,15 +83,58 @@ export async function GET() {
       // table might not exist in old schema
     }
 
+    let attributionBreakdown = []
+    try {
+      attributionBreakdown = db.prepare(`
+        SELECT attribution_type, COUNT(*) as count, 
+          COALESCE(SUM(recovered_amount), 0) as recovered,
+          COALESCE(SUM(amount_at_risk), 0) as atRisk
+        FROM recovery_cases
+        GROUP BY attribution_type
+      `).all()
+    } catch (e) {
+      // column might not exist in old schema
+    }
+
+    let strategyComparison = null
+    try {
+      const allCases = db.prepare(`
+        SELECT amount_at_risk, recovered_amount, failure_category FROM recovery_cases
+      `).all()
+      strategyComparison = estimateNaiveBaseline(allCases)
+    } catch (e) {
+      // column might not exist in old schema
+    }
+
+    let noActionCount = 0
+    try {
+      const noActionRow = db.prepare(`
+        SELECT COUNT(*) as count FROM recovery_cases WHERE recommended_action = 'no_action'
+      `).get()
+      noActionCount = noActionRow?.count || 0
+    } catch (e) {
+      // column might not exist in old schema
+    }
+
+    let avgNEV = 0
+    try {
+      const avgNEVRow = db.prepare(`
+        SELECT AVG(net_expected_value) as avg FROM recovery_cases WHERE status IN ('open', 'in_progress')
+      `).get()
+      avgNEV = avgNEVRow?.avg || 0
+    } catch (e) {
+      // column might not exist in old schema
+    }
+
     return NextResponse.json({
-      totalRevenue: totalRevenueRow.sum || 0,
-      revenueAtRisk: revenueAtRiskRow.sum || 0,
+      totalRevenue: totalRevenueRow?.sum || 0,
+      revenueAtRisk: revenueAtRiskRow?.sum || 0,
       revenueRecovered,
       recoveryRate,
-      customersAtRisk: customersAtRiskRow.count,
-      activeCases: activeCasesRow.count,
-      totalFailedPayments: totalFailedPaymentsRow.count,
-      avgRecoveryProbability: avgRecoveryProbabilityRow.avg || 0,
+      customersAtRisk: customersAtRiskRow?.count || 0,
+      activeCases: activeCasesRow?.count || 0,
+      totalFailedPayments: totalFailedPaymentsRow?.count || 0,
+      avgRecoveryProbability: avgRecoveryProbabilityRow?.avg || 0,
       failureReasons,
       recentCases,
       recoveryTrend,
@@ -94,7 +143,11 @@ export async function GET() {
       netRecovery,
       recoveryByAction,
       recoveryBySegment,
-      eventBreakdown
+      eventBreakdown,
+      attributionBreakdown,
+      strategyComparison,
+      noActionCount,
+      avgNEV
     })
   } catch (error) {
     console.error('Dashboard Error:', error)

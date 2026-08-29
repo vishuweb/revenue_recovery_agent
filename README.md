@@ -6,360 +6,270 @@
 [![Hugeicons](https://img.shields.io/badge/Icons-Hugeicons-blue?style=flat-square)](https://hugeicons.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald?style=flat-square)](LICENSE)
 
-**Recovr** is an enterprise-grade autonomous revenue recovery and dunning orchestration engine designed for SaaS, e-commerce, subscription businesses, and modern billing infrastructure. It intelligently diagnoses payment failures, predicts recovery probability using customer lifetime value (LTV) and historical reliability, schedules optimal retries, enforces bounded compliance guardrails, and allows operators or judges to **upload and execute their own business datasets in real-time**.
+**Recovr** is an enterprise-grade autonomous revenue recovery and dunning orchestration engine designed for SaaS, e-commerce, subscription billing, and fintech payment infrastructure. 
+
+Unlike naive dunning scripts or AI wrappers that blindly retry payments or spam customers, Recovr optimizes for **Net Incremental Revenue** using **Net Expected Value (NEV)** decision math. It treats **"Do Nothing"** as a first-class financial action, enforces deterministic business guardrails, guarantees payment idempotency, classifies revenue attribution, and provides complete decision transparency.
 
 ---
 
 ## 📑 Table of Contents
 
 - [Key Product Capabilities](#-key-product-capabilities)
+- [Core Architectural Thesis](#-core-architectural-thesis)
+- [Net Expected Value (NEV) Decision Engine](#-net-expected-value-nev-decision-engine)
+- ["Do Nothing" as First-Class Action](#-do-nothing-as-first-class-action)
+- [Policy & Guardrail Safety Layer](#-policy--guardrail-safety-layer)
+- [Failure Recovery & Idempotency](#-failure-recovery--idempotency)
+- [Revenue Attribution & Strategy Comparison](#-revenue-attribution--strategy-comparison)
 - [The "Run Your Business Data" Experience](#-the-run-your-business-data-experience)
-- [System Architecture & Workflow](#-system-architecture--workflow)
-- [Real Decision Pipeline & Guardrails](#-real-decision-pipeline--guardrails)
-- [Tech Stack](#-tech-stack)
-- [Project Directory Structure](#-project-directory-structure)
 - [Database Schema & Data Models](#-database-schema--data-models)
 - [API Reference](#-api-reference)
+- [Testing & Observability](#-testing--observability)
 - [Getting Started](#-getting-started)
-- [Razorpay & Gateway Integration Architecture](#-razorpay--gateway-integration-architecture)
-- [Contributing & License](#-contributing--license)
+- [License](#-license)
 
 ---
 
 ## 🚀 Key Product Capabilities
 
-1. **"Run Your Business Data" Live Command Center (`/analyze`)**:
-   - Upload any custom CSV or choose from 4 curated business datasets (*SaaS Subscriptions*, *E-Commerce Dropoffs*, *B2B Overdue Invoices*, *Multi-Gateway Declines*).
-   - Intelligent column recognition maps diverse header conventions (`customer_id`, `amount`, `order_value`, `failure_reason`, `plan`, `ltv`, `discount_affinity`) automatically.
-   - Interactive column-mapping review matrix and pre-execution data risk preview.
-   - **Zero Hardcoded Numbers**: Every uploaded row flows through the real underlying classification, prediction, decision, and guardrail engines.
-2. **Live Agent Execution Telemetry**:
-   - Progressive 8-stage execution checklist with live progress counters and real-time streaming decision feeds.
-3. **Before vs After Financial Yield & 6-Stage Recovery Funnel**:
-   - High-impact Before vs After showcase comparing Gross Revenue at Risk against Net Recovered Revenue.
-   - Interactive 6-stage funnel: `Uploaded Records` $\rightarrow$ `Revenue-Risk Events` $\rightarrow$ `Eligible for Recovery` $\rightarrow$ `Agent Decisions` $\rightarrow$ `Actions Executed` $\rightarrow$ `Successful Recoveries`.
-4. **Deep Case Diagnostic Drawer**:
-   - Click any case to inspect multi-factor probability factors, strategy rationale, guardrail compliance notices, and chronological audit timelines.
-5. **Persistent Dataset Run History**:
-   - Saves all dataset runs in SQLite (`dataset_runs`) for retrospective benchmarking and comparison.
-6. **Executive Telemetry Dashboard (`/`) & Workbench (`/cases`)**:
-   - Financial telemetry, active dunning triage, and manual operator overrides.
-7. **Orchestrator Sandbox & Simulator (`/simulator`)**:
-   - Synthetic failure injection across soft declines, hard declines, high-value alerts, and checkout timeouts.
-8. **Compliance & Immutable Audit Ledger (`/audit`)**:
-   - Chronological audit trail recording all evaluations, guardrail checks, and actor actions.
+1. **Net Expected Value (NEV) Optimization Engine**:
+   - Generates all candidate recovery actions (*retry*, *payment_link*, *email*, *discount*, *free_shipping*, *escalate*, *no_action*).
+   - Computes $\text{NEV} = (P_{\text{recovery}} \times \text{Amount}) - \text{Intervention Cost}$.
+   - Selects the action with highest positive NEV.
+2. **"Do Nothing" (`no_action`) as Optimal Decision**:
+   - Intentionally selects inaction when recovery probability is too low, intervention cost exceeds expected return, customer has opted out, or customer fatigue cap is reached.
+3. **Policy & Guardrail Layer**:
+   - Hard limits: retry caps (5 max), minimum retry interval (30m), communication caps (3 emails/2 SMS), discount caps (10% max), customer fatigue limits (max 5 interventions/30d across all cases).
+4. **Idempotency & Resilience**:
+   - Deduplicates incoming payment webhooks and event streams via `idempotency_key`.
+   - Prevents duplicate recovery cases per payment ID.
+   - Handles out-of-order webhooks (e.g., success arriving before failure).
+   - Wraps database mutations in atomic `db.transaction()`.
+   - Deterministic AI fallback mode when primary decision engine fails.
+5. **Revenue Attribution Engine**:
+   - Classifies resolved recoveries as `organic` (self-cured without intervention), `recovered` (direct retry success), `assisted` (recovered after outreach), or `unrecovered`.
+   - Labeled as **Attributed Recovery** to avoid false claims.
+6. **Strategy Comparison**:
+   - Benchmarks adaptive NEV recovery against a naive "retry everything" baseline to display true incremental value uplift.
+7. **Interactive Judge & Business Data Runner (`/analyze`)**:
+   - Upload any custom business CSV or test pre-loaded datasets (*SaaS Subscriptions*, *E-Commerce Dropoffs*, *B2B Invoices*, *Fintech Gateways*).
+   - Full RFC 4180 CSV parser with 120+ automatic column header aliases.
+   - Interactive candidate NEV matrix & diagnostic drawer per case.
+8. **Structured Observability**:
+   - Machine-parseable decision lifecycle events logged to `audit_log` across all 12 phases (`event_received` $\rightarrow$ `classified` $\rightarrow$ `predicted` $\rightarrow$ `prioritized` $\rightarrow$ `action_selected` $\rightarrow$ `policy_checked` $\rightarrow$ `executed` $\rightarrow$ `recovered`).
+
+---
+
+## 📐 Core Architectural Thesis
+
+Recovr operates on four core engineering principles:
+
+1. **Problem Taste**: Optimize for **Net Incremental Revenue**, not raw transaction retries. Intervention costs (discounts, email delivery, analyst labor, churn fatigue) are subtracted from expected recovery.
+2. **Build Quality**: Relational database integrity using SQLite WAL mode, integer paise accounting (no floating-point rounding errors), foreign keys, and atomic transactions.
+3. **Deterministic Safety Layer**: AI recommends actions, but a deterministic **Policy Engine** clamps discounts, enforces caps, and checks DND preferences before any action executes.
+4. **Failure Recovery**: Financial actions are guaranteed idempotent. Duplicate events yield `HTTP 200 { duplicate: true }`. Network failures route to a dead-letter queue.
+
+---
+
+## 🧮 Net Expected Value (NEV) Decision Engine
+
+Every recovery case evaluates a full candidate matrix rather than following rigid `if/else` rules:
+
+$$\text{NEV}_{\text{action}} = \left( P_{\text{recovery, action}} \times \text{Amount}_{\text{risk}} \right) - \text{Cost}_{\text{intervention}}$$
+
+### Candidate Cost Model
+
+| Action Candidate | Fixed Cost | Variable Cost | Purpose |
+|:---|:---|:---|:---|
+| `retry` | ₹0 | ₹0 | Gateway re-attempt |
+| `payment_link` | ₹50 | ₹0 | Payment update link delivery |
+| `email` | ₹25 | ₹0 | Personalized outreach email |
+| `sms` | ₹15 | ₹0 | SMS notification |
+| `discount` | ₹0 | 5% – 10% of Amount | Margin concession incentive |
+| `free_shipping` | ₹150 | ₹0 | Shipping cost absorption |
+| `escalate` | ₹500 | ₹0 | Human analyst time (~30 min) |
+| `no_action` | ₹0 | ₹0 | Passive hold — zero intervention |
+
+If all candidate actions yield $\text{NEV} \le 0$, the system selects `no_action`.
+
+---
+
+## 🚫 "Do Nothing" as First-Class Action
+
+In fintech operations, **knowing when NOT to act** is a major quality signal:
+
+- **Low Probability**: If recovery chance is 5% on a ₹500 invoice, spending ₹50 on outreach has negative NEV.
+- **Customer Fatigue**: If a customer has received 5 interventions across active cases in 30 days, further communication triggers churn.
+- **Hard Declines**: If a card is closed or stolen, retrying network charges wastes fees.
+- **Opt-Out**: DND compliance blocks automated communication.
+
+In all these cases, Recovr outputs `no_action` with clear financial justification logged in the audit trail:
+
+> *"No action is the optimal decision. ₹1,200 revenue at risk, but estimated recovery probability is 4.2%. Best candidate (retry) has NEV of -₹50 after accounting for customer fatigue. Automated recovery stopped to protect net ROI."*
+
+---
+
+## 🛡️ Policy & Guardrail Safety Layer
+
+Every proposed action must pass through the `checkGuardrails` pipeline:
+
+```
+AI RECOMMENDATION ──► POLICY ENGINE ──► APPROVED / MODIFIED / REJECTED ──► ACTION EXECUTOR
+```
+
+### Configurable Business Rules
+
+- **MAX_RETRY_ATTEMPTS**: 5 attempts max
+- **MIN_RETRY_INTERVAL**: 30 minutes between retries
+- **MAX_EMAILS_PER_CASE**: 3 emails max
+- **MAX_SMS_PER_CASE**: 2 SMS max
+- **MAX_DISCOUNT_PERCENT**: 10% cap (automatically clamped if AI recommends higher)
+- **MARGIN_PROTECTION**: Intervention cost must be $< 15\%$ of amount at risk
+- **CUSTOMER_FATIGUE**: Max 5 interventions per customer across all cases in 30 days
+- **APPROVAL_THRESHOLD**: Risk $> \text{₹50,000}$ requires human analyst sign-off
+
+---
+
+## 🔄 Failure Recovery & Idempotency
+
+- **Database Atomicity**: Multi-table inserts (`payments`, `recovery_cases`, `recovery_actions`, `events`) are wrapped in `db.transaction()`.
+- **Event Deduplication**: Webhooks and API events calculate `idempotency_key = ${event}_${payment_id}`. Duplicate webhooks return `HTTP 200 { duplicate: true }`.
+- **Out-of-Order Webhooks**: If a `payment.captured` event arrives before `payment.failed`, the system marks payment success and skips failure case creation.
+- **AI Fallback**: If the primary decision engine throws an error or LLM services are unreachable, `deterministicFallback()` executes a safe, rules-only policy and logs `isAIFallback: true`.
+
+---
+
+## 📈 Revenue Attribution & Strategy Comparison
+
+### Attribution Types
+- **Organic**: Customer paid before any intervention was executed (self-cure).
+- **Recovered**: Direct payment recovery via a scheduled retry.
+- **Assisted**: Payment succeeded after non-retry outreach (email, payment link, discount).
+- **Unrecovered**: Case closed without resolution.
+
+### Strategy Comparison Baseline
+Recovr compares its adaptive NEV engine against a **Naive Retry** baseline (retrying all temporary failures with standard category probabilities). The dashboard surfaces **Incremental Value Uplift**:
+
+$$\text{Incremental Uplift} = \text{Adaptive Recovery Actual} - \text{Naive Retry Baseline}$$
 
 ---
 
 ## 📊 The "Run Your Business Data" Experience
 
-Recovr provides a dynamic evaluation flow designed for business operators and judges:
+Run custom CSV datasets or pre-loaded benchmarks through `/analyze`:
 
 ```
 ┌───────────────────────────┐
 │     1. Upload CSV /       │
-│  Select Curated Dataset   │
+│   Select Demo Dataset     │
 └─────────────┬─────────────┘
-              │
               ▼
 ┌───────────────────────────┐
-│  2. Intelligent Column    │
-│    Mapping & Validation   │
+│   2. Column Auto-Mapping  │  <-- RFC 4180 Parser + 120+ Header Aliases
 └─────────────┬─────────────┘
-              │
               ▼
 ┌───────────────────────────┐
-│  3. Pre-Run Risk Preview  │
-│  (Total Vol, At Risk ₹)   │
+│  3. Live Engine Execution │  <-- Classifier -> Predictor -> Decider -> NEV Matrix
 └─────────────┬─────────────┘
-              │
               ▼
 ┌───────────────────────────┐
-│  4. Run Recovery Engine   │
-│ (Live 8-Stage Telemetry)  │
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│  5. Dynamic Yield Funnel  │
-│  & Case Diagnostic Drawer │
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│ 6. Persistent Run History │
+│ 4. Verified Yield & Funnel│  <-- Before vs After Net ROI + Case Diagnostics
 └───────────────────────────┘
 ```
 
 ---
 
-## 🏗️ System Architecture & Workflow
+## 💾 Database Schema & Data Models
 
-```
-                                 ┌──────────────────────────┐
-                                 │ Uploaded CSV / Webhook / │
-                                 │     Simulator Event      │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  1. Event Normalizer     │
-                                 │  & Flexible Schema Mapper│
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  2. Failure Classifier   │
-                                 │ (Soft, Hard, Behavioral) │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  3. Customer Context     │
-                                 │ (Tenure, LTV, Affinity)  │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  4. Predictive Engine    │
-                                 │ (Decay, History, Prob %) │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  5. Priority Matrix      │
-                                 │   (P0 Critical to P3)    │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  6. AI Strategy Decider  │
-                                 │  (Deterministic Fallback)│
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  7. Policy Guardrails    │
-                                 │(10% Disc Cap, Max Retry) │
-                                 └────────────┬─────────────┘
-                                              │
-                         ┌────────────────────┴────────────────────┐
-                         ▼                                         ▼
-              ┌─────────────────────┐                   ┌─────────────────────┐
-              │ Automated Execution │                   │  Operator Override  │
-              │(Retry/Link/Discount)│                   │  (Manual Approval)  │
-              └──────────┬──────────┘                   └──────────┬──────────┘
-                         │                                         │
-                         └────────────────────┬────────────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │ 8. Probabilistic Settle  │
-                                 │   & Adaptive Calibration │
-                                 └────────────┬─────────────┘
-                                              │
-                                              ▼
-                                 ┌──────────────────────────┐
-                                 │  9. Immutable Audit Log  │
-                                 │   & Historical Reports   │
-                                 └──────────────────────────┘
+Stored in SQLite (`data/revenue_recovery.db`) using **integer paise** ($1\text{ INR} = 100\text{ paise}$):
+
+```sql
+recovery_cases (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  payment_id TEXT NOT NULL REFERENCES payments(id),
+  amount_at_risk INTEGER NOT NULL,
+  expected_recovery INTEGER NOT NULL DEFAULT 0,
+  net_expected_value INTEGER NOT NULL DEFAULT 0,
+  candidate_actions TEXT,          -- JSON array of all NEV candidates
+  failure_reason TEXT NOT NULL,
+  failure_category TEXT NOT NULL,
+  recovery_probability REAL NOT NULL,
+  priority_score REAL NOT NULL,
+  recommended_action TEXT,
+  ai_reasoning TEXT,
+  attribution_type TEXT NOT NULL DEFAULT 'unknown',
+  status TEXT NOT NULL DEFAULT 'open',
+  attempts_made INTEGER NOT NULL DEFAULT 0,
+  recovered_amount INTEGER NOT NULL DEFAULT 0
+);
 ```
 
 ---
 
-## 🛡️ Real Decision Pipeline & Guardrails
+## ⚡ API Reference
 
-### 1. Differentiated Customer Decisions
-The engine never applies a generic one-size-fits-all action:
-* **Temporary Soft Declines** (`insufficient_funds`, `gateway_error`, `bank_server_down`): Computes statistical retry delays (e.g. 6 hours / 30 mins) with high recovery probability.
-* **Permanent Hard Declines** (`card_expired`, `invalid_card`, `international_blocked`): Halts retries and dispatches self-serve payment link with tokenization.
-* **High-LTV Enterprise Accounts**: Flagged as P0 Critical Impact and routed for white-glove support escalation.
-* **Checkout Dropoffs with High Discount Affinity**: Offers dynamic promotional courtesy discount.
-* **Exhausted Attempts / Low Probability**: Bounded by policy stop to prevent payment processor fees and customer annoyance.
-
-### 2. Business Policy Guardrails
-* **`MAX_DISCOUNT_PERCENT`**: Automatically clamps discounts to a maximum 10% ceiling.
-* **`MAX_RETRY_ATTEMPTS`**: Caps retries at 5 attempts.
-* **`MIN_RETRY_INTERVAL`**: Enforces a 30-minute cooldown between retry charges.
-* **`MARGIN_PROTECTION`**: Prevents concession costs from exceeding 15% of the transaction value.
-* **`CUSTOMER_OPTED_OUT`**: Automatically suppresses outbound communication for opted-out users.
+| Endpoint | Method | Purpose |
+|:---|:---|:---|
+| `/api/dashboard` | `GET` | Aggregates volume, NEV metrics, strategy comparison, and attribution breakdown |
+| `/api/dataset/parse` | `POST` | Ingests CSV, auto-maps columns, and returns dataset archetype classification |
+| `/api/dataset/run` | `POST` | Runs full dataset row-by-row through the engine and persists results |
+| `/api/cases` | `GET`, `POST` | List cases with search/filter or initiate new recovery case |
+| `/api/cases/[id]` | `GET`, `PATCH` | Deep case diagnostic view or execute operator intervention |
+| `/api/webhooks` | `POST` | Idempotent gateway webhook handler (`payment.failed`, `payment.captured`) |
+| `/api/events` | `POST` | Ingest business events (`checkout_abandoned`, `near_expiry_inventory`) |
+| `/api/simulator` | `POST` | Sandbox data generator, scenario triggers, and recovery testing |
+| `/api/cron` | `GET` | Automated background dunning tick (processes scheduled retries) |
 
 ---
 
-## 🛠️ Tech Stack
+## 🧪 Testing & Observability
 
-* **Framework**: [Next.js 15](https://nextjs.org/) (App Router, Server Actions, Route Handlers)
-* **Frontend**: [React 19](https://react.dev/), Custom Enterprise FinTech CSS Design System
-* **Iconography**: [Hugeicons React](https://hugeicons.com/) (`@hugeicons/react`, `@hugeicons/core-free-icons`)
-* **Charts & Analytics**: [Recharts](https://recharts.org/)
-* **Database**: [SQLite](https://sqlite.org/) via [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) with WAL mode and performance indexing
-* **Utilities**: `uuid` for entity identification
+Run the unit test suite:
 
----
-
-## 📂 Project Directory Structure
-
-```
-revenue_recovery_agent/
-├── data/
-│   └── revenue_recovery.db       # Embedded SQLite database
-├── src/
-│   ├── app/
-│   │   ├── analyze/              # "Run Your Business Data" command center
-│   │   │   └── page.js           # Upload, mapping, live execution & funnel UI
-│   │   ├── api/                  # REST API Route Handlers
-│   │   │   ├── audit/            # Audit trail stream
-│   │   │   ├── cases/            # Case retrieval & action dispatcher
-│   │   │   ├── cron/             # Background pipeline sweep runner
-│   │   │   ├── customers/        # Customer portfolio data
-│   │   │   ├── dashboard/        # High-level KPIs & chart feeds
-│   │   │   ├── dataset/
-│   │   │   │   ├── parse/        # CSV parsing & column mapping endpoint
-│   │   │   │   ├── run/          # Real engine pipeline execution endpoint
-│   │   │   │   └── runs/         # Dataset run history endpoints
-│   │   │   ├── events/           # External event ingestion
-│   │   │   ├── simulator/        # Sandbox scenario dispatcher
-│   │   │   └── webhooks/         # Payment gateway webhook receiver
-│   │   ├── audit/                # Audit trail UI
-│   │   ├── cases/                # Case listing and detail pages
-│   │   ├── components/           # UI Components (Charts, Modals, Avatars, Icons)
-│   │   │   ├── ActionModal.js    # Intervention dispatch modal
-│   │   │   ├── Charts.js         # Recharts wrappers
-│   │   │   ├── CommandPalette.js # ⌘K search & quick action palette
-│   │   │   ├── CustomerAvatar.js # Dynamic customer avatar
-│   │   │   ├── Icons.js          # Centralized Hugeicons layer
-│   │   │   ├── ToastContext.js   # Global toast notifications
-│   │   │   └── TopNav.js         # Global navigation header
-│   │   ├── customers/            # Customer portfolio and profile pages
-│   │   ├── simulator/            # Sandbox test workbench
-│   │   ├── globals.css           # Enterprise FinTech styling & variables
-│   │   ├── layout.js             # App shell, sidebar & root layout
-│   │   └── page.js               # Main Executive Dashboard
-│   └── lib/
-│       ├── dataset/
-│       │   ├── demo-datasets.js  # Curated sample business datasets
-│       │   ├── parser.js         # CSV parser & column normalizer
-│       │   └── pipeline.js       # Complete recovery pipeline engine
-│       ├── db/
-│       │   ├── database.js       # SQLite connection manager & seed loader
-│       │   └── schema.sql        # Database tables, relationships & indexes
-│       ├── engine/               # Core AI Decision Engine
-│       │   ├── classifier.js     # Gateway decline classifier
-│       │   ├── decider.js        # Action strategy optimizer
-│       │   ├── guardrails.js     # Safety & limit enforcement
-│       │   ├── orchestrator.js   # Event lifecycle & retry coordinator
-│       │   ├── predictor.js      # Recovery probability calculator
-│       │   └── prioritizer.js    # Urgency & value ranking matrix
-│       ├── providers/
-│       │   ├── provider.js       # Base payment gateway interface
-│       │   └── simulation.js     # Gateway execution provider
-│       └── simulation/
-│           ├── generator.js      # Synthetic data generator
-│           └── scenarios.js      # Pre-built failure archetypes
-├── jsconfig.json                 # Path aliases
-├── next.config.mjs               # Next.js configuration
-├── package.json                  # Dependencies & scripts
-└── README.md                     # Documentation
+```bash
+node --test tests/engine.test.mjs
 ```
 
----
-
-## 🗄️ Database Schema & Data Models
-
-The database schema is defined in [`src/lib/db/schema.sql`](src/lib/db/schema.sql). Monetary amounts are stored in **paise** ($1\text{ INR} = 100\text{ paise}$) to eliminate floating-point inaccuracies.
-
-### Core Tables
-* **`dataset_runs`**: Historical dataset run records (total volume, revenue at risk, recovered amount, net yield, recovery rate, archetype, and stage summaries).
-* **`customers`**: Subscriber accounts, MRR, Lifetime Value, payment method tokens, churn risk scores, and discount affinity.
-* **`subscriptions`**: Active billing plans, recurring intervals, and failure counters.
-* **`invoices`**: Billing statements and payment due dates.
-* **`payments`**: Payment attempts, gateway decline codes, and transaction statuses.
-* **`recovery_cases`**: Active dunning cases, amount at risk, predicted recovery score, priority rating, and assigned strategy.
-* **`recovery_actions`**: Dispatched interventions (scheduled retries, dunning notices, discounts offered).
-* **`audit_log`**: Immutable chronological history of all engine evaluations and operator overrides.
-* **`events`**: Ingested webhook and lifecycle events.
+### Core Tests Verified (8/8 Pass):
+1. **NEV Calculation**: Verifies expected recovery and intervention cost math.
+2. **Do Nothing Selection**: Verifies `no_action` is selected when all candidates have negative NEV or low probability.
+3. **Guardrails & Policy**: Verifies discount clamping (10% max) and opt-out communication blocking.
+4. **Idempotency**: Verifies duplicate payment ID returns existing case without duplicate insertion.
+5. **AI Fallback**: Verifies deterministic fallback mode executes safe policies during engine failures.
+6. **Revenue Attribution**: Verifies organic vs recovered classification.
+7. **CSV Parser**: Verifies flexible column mapping across header aliases.
+8. **High-Value Escalation**: Verifies threshold $> \text{₹50,000}$ flags `requiresApproval: true`.
 
 ---
 
-## 🔌 API Reference
-
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| **`/api/dataset/parse`** | `POST` | Parses uploaded CSV, auto-detects column mappings, and generates pre-run risk summary. |
-| **`/api/dataset/run`** | `POST` | Executes normalized dataset through the full recovery pipeline and returns dynamic yield metrics. |
-| **`/api/dataset/runs`** | `GET` | Lists historical dataset runs with performance statistics. |
-| **`/api/dataset/runs/[id]`** | `GET` | Retrieves full run summary and case breakdown for a past dataset evaluation. |
-| **`/api/dashboard`** | `GET` | Fetches aggregate recovery KPIs, 30-day trends, decline reasons, and recent cases. |
-| **`/api/cases`** | `GET` | Lists recovery cases with support for `status`, `sortBy`, and `search` query parameters. |
-| **`/api/cases/[id]`** | `GET` | Retrieves diagnostic data, audit trail, customer info, and action steps for a case. |
-| **`/api/cases/[id]`** | `PATCH` | Executes an action (`approve`, `execute`, `escalate`, `stop`, or appends notes). |
-| **`/api/customers`** | `GET` | Returns the customer directory with risk scores and LTV metrics. |
-| **`/api/simulator`** | `POST` | Dispatches sandbox commands (`seed`, `trigger_scenario`, `bulk_scenarios`, `simulate_recovery`). |
-| **`/api/cron`** | `GET` | Executes automated batch retry evaluations across all active recovery cases. |
-| **`/api/audit`** | `GET` | Returns chronological audit log entries with optional `entity_type` filter. |
-| **`/api/webhooks`** | `POST` | Ingests payment gateway webhooks (`charge.failed`, `invoice.payment_failed`). |
-
----
-
-## 🚀 Getting Started
+## 💻 Getting Started
 
 ### Prerequisites
-* **Node.js**: v18.17.0 or higher
-* **npm** / **yarn** / **pnpm**
+- **Node.js**: v18.0.0 or higher
+- **npm**: v9.0.0 or higher
 
-### Installation
+### Installation & Run
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/vishuweb/revenue_recovery_agent.git
-   cd revenue_recovery_agent
-   ```
-
-2. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Start the Development Server**:
-   ```bash
-   npm run dev
-   ```
-
-4. **Access the Dashboard**:
-   Open your browser at **[http://localhost:3000](http://localhost:3000)**.
-   - Navigate to **"Run Your Business Data"** (`/analyze`) to upload and run your own datasets.
-   - Navigate to **"Orchestrator Sandbox"** (`/simulator`) to inject synthetic real-time failure scenarios.
-
-### Production Build
 ```bash
-npm run build
-npm run start
+# Clone repository
+git clone https://github.com/vishuweb/revenue_recovery_agent.git
+cd revenue_recovery_agent
+
+# Install dependencies
+npm install
+
+# Run unit tests
+node --test tests/engine.test.mjs
+
+# Run Next.js development server
+npm run dev
 ```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 💳 Razorpay & Gateway Integration Architecture
-
-Recovr uses a modular gateway abstraction layer:
-
-```
-Uploaded Dataset / Webhook
-            ↓
-  Normalized Event Model
-            ↓
-  Revenue Recovery Engine
-            ↓
-     Payment Provider
-     ├── Simulation / Mock Provider
-     └── Razorpay Integration Provider
-```
-
-* The core engine is decoupled from specific gateways, allowing plug-and-play switching between simulation mode and live payment gateways (e.g. Razorpay, Stripe) without altering recovery logic.
-
----
-
-## 🤝 Contributing & License
-
-Contributions, issues, and feature requests are welcome!
+## 📄 License
 
 Distributed under the **MIT License**. See `LICENSE` for more information.

@@ -7,8 +7,8 @@ export const DEMO_DATASETS = [
     id: 'saas_subscriptions',
     name: 'SaaS Subscription Renewals & Soft Declines',
     badge: 'SaaS B2B',
-    description: '120 active subscription billing renewal failures across Starter, Growth, and Enterprise tiers with varied gateway response codes.',
-    recordsCount: 120,
+    description: '30 active subscription billing renewal failures across Starter, Growth, and Enterprise tiers with varied gateway response codes.',
+    recordsCount: 30,
     estimatedRisk: '₹28.4L',
     csv: `customerId,customerName,email,company,plan,mrr,lifetimeValue,paymentMethod,failureReason,retryCount,previousSuccesses,previousFailures,discountAffinity
 cust_saas_001,Aarav Mehta,aarav@cloudscale.io,CloudScale Technologies,enterprise,125000,1500000,card,gateway_error,0,18,0,0.15
@@ -46,8 +46,8 @@ cust_saas_030,Kareena Kapoor,kareena@glamlook.co,GlamLook Direct,starter,13500,9
     id: 'ecommerce_dropoffs',
     name: 'E-Commerce High-LTV Cart Dropoffs & Abandonment',
     badge: 'E-Commerce',
-    description: '90 high-intent checkout dropoffs with basket values, customer discount sensitivity, and cart abandonment timeout telemetry.',
-    recordsCount: 90,
+    description: '20 high-intent checkout dropoffs with basket values, customer discount sensitivity, and cart abandonment timeout telemetry.',
+    recordsCount: 20,
     estimatedRisk: '₹14.2L',
     csv: `user_id,customer_name,email,order_value,customer_segment,lifetime_value,cart_status,failure_reason,discount_affinity,previous_successful_payments,previous_failed_payments
 cart_usr_101,Neha Agarwal,neha.a@gmail.com,18500,growth,148000,abandoned,checkout_abandoned,0.78,14,1
@@ -75,8 +75,8 @@ cart_usr_120,Ayushmann Khurrana,ayushmann@tunes.in,120000,enterprise,1440000,aba
     id: 'b2b_invoices',
     name: 'B2B Accounts Receivable & Overdue Invoices',
     badge: 'Enterprise Invoicing',
-    description: '110 high-value corporate invoices requiring dispute triage, payment link dispatch, and analyst escalation.',
-    recordsCount: 110,
+    description: '15 high-value corporate invoices requiring dispute triage, payment link dispatch, and analyst escalation.',
+    recordsCount: 15,
     estimatedRisk: '₹62.5L',
     csv: `account_id,client_name,contact_email,company,tier,invoice_amount,days_overdue,invoice_status,failure_reason,cumulative_revenue,paid_count,decline_count
 inv_acc_501,Rajiv Bajaj,rajiv@bajajauto.corp,Bajaj Mobility Group,enterprise,450000,14,overdue,invoice_overdue,6200000,34,0
@@ -99,8 +99,8 @@ inv_acc_515,Ritesh Agarwal,ritesh@oyorooms.global,OYO Hospitality Tech,enterpris
     id: 'mixed_gateways',
     name: 'Multi-Gateway Fintech Declines & Dropouts',
     badge: 'Fintech Mix',
-    description: '150 diverse payment failure codes across Razorpay, Stripe, and UPI rails with real gateway error codes.',
-    recordsCount: 150,
+    description: '12 diverse payment failure codes across Razorpay, Stripe, and UPI rails with real gateway error codes.',
+    recordsCount: 12,
     estimatedRisk: '₹34.6L',
     csv: `transaction_id,customer_id,customer_name,email,plan,amount,payment_method,failure_reason,retry_count,previous_successful_payments,previous_failed_payments,discount_affinity
 txn_gw_901,usr_gw_01,Ramesh Babu,ramesh@chennaitech.in,enterprise,68000,card,gateway_error,0,21,0,0.15

@@ -1324,6 +1324,64 @@ cust_106,Swati Verma,swati@growthpulse.ai,GrowthPulse,starter,6200,upi,checkout_
               )}
             </div>
 
+            {/* Candidate NEV Table */}
+            {selectedCaseModal.candidateActions && (() => {
+              try {
+                const candidates = typeof selectedCaseModal.candidateActions === 'string'
+                  ? JSON.parse(selectedCaseModal.candidateActions)
+                  : selectedCaseModal.candidateActions;
+                if (!Array.isArray(candidates) || candidates.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: '16px', background: 'var(--bg-subtle)', border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em' }}>
+                      Candidate Actions NEV Optimization Matrix
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ fontSize: '11px', margin: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>Action</th>
+                            <th>Prob</th>
+                            <th>Intervention Cost</th>
+                            <th>NEV</th>
+                            <th>Decision</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {candidates.map((cand, idx) => {
+                            const isSel = cand.selected || cand.action === selectedCaseModal.recommendedAction;
+                            return (
+                              <tr key={idx} style={{ background: isSel ? 'rgba(37, 99, 235, 0.12)' : undefined }}>
+                                <td style={{ fontWeight: isSel ? 700 : 500, color: isSel ? '#93c5fd' : 'var(--text-primary)' }}>
+                                  {cand.action} {cand.discountPercent ? `(${cand.discountPercent}%)` : ''}
+                                </td>
+                                <td className="font-mono">{Math.round((cand.probability || 0) * 100)}%</td>
+                                <td className="font-mono" style={{ color: cand.interventionCost > 0 ? '#fb7185' : 'var(--text-dim)' }}>
+                                  {formatCurrency(cand.interventionCost || 0)}
+                                </td>
+                                <td className="font-mono" style={{ fontWeight: 700, color: cand.nev > 0 ? '#34d399' : '#fb7185' }}>
+                                  {formatCurrency(cand.nev || 0)}
+                                </td>
+                                <td>
+                                  {isSel ? (
+                                    <span className="badge success" style={{ fontSize: '9px' }}>SELECTED</span>
+                                  ) : cand.nev <= 0 ? (
+                                    <span className="badge danger" style={{ fontSize: '9px' }}>NEGATIVE NEV</span>
+                                  ) : (
+                                    <span className="badge secondary" style={{ fontSize: '9px' }}>RUNNER UP</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              } catch (e) { return null; }
+            })()}
+
             <div>
               <h4 style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <IconClock size={14} color="#60a5fa" />

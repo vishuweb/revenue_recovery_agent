@@ -26,15 +26,40 @@ export function getDb() {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
 
-  // Initialize schema
+  // Apply schema and migrations
+  applySchemaAndMigrations(db);
+
+  globalThis.__revenueRecoveryDb = db;
+  return db;
+}
+
+function applySchemaAndMigrations(db) {
+  // First run column migrations on any existing tables to ensure index creation succeeds
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
+    
+    if (tables.includes('recovery_cases')) {
+      const caseCols = db.prepare("PRAGMA table_info(recovery_cases)").all().map(c => c.name);
+      if (!caseCols.includes('expected_recovery')) db.exec("ALTER TABLE recovery_cases ADD COLUMN expected_recovery INTEGER NOT NULL DEFAULT 0");
+      if (!caseCols.includes('net_expected_value')) db.exec("ALTER TABLE recovery_cases ADD COLUMN net_expected_value INTEGER NOT NULL DEFAULT 0");
+      if (!caseCols.includes('candidate_actions')) db.exec("ALTER TABLE recovery_cases ADD COLUMN candidate_actions TEXT");
+      if (!caseCols.includes('attribution_type')) db.exec("ALTER TABLE recovery_cases ADD COLUMN attribution_type TEXT NOT NULL DEFAULT 'unknown'");
+    }
+
+    if (tables.includes('events')) {
+      const eventCols = db.prepare("PRAGMA table_info(events)").all().map(c => c.name);
+      if (!eventCols.includes('idempotency_key')) db.exec("ALTER TABLE events ADD COLUMN idempotency_key TEXT");
+    }
+  } catch (e) {
+    console.warn('[db migration warn]', e.message);
+  }
+
+  // Initialize schema with latest version
   const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
   if (fs.existsSync(schemaPath)) {
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     db.exec(schema);
   }
-
-  globalThis.__revenueRecoveryDb = db;
-  return db;
 }
 
 /**
@@ -57,12 +82,7 @@ export function resetDatabase() {
   `);
   db.pragma('foreign_keys = ON');
 
-  // Re-initialize schema with latest version
-  const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
-  if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    db.exec(schema);
-  }
+  applySchemaAndMigrations(db);
 }
 
 /**
