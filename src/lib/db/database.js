@@ -45,6 +45,7 @@ export function resetDatabase() {
   const db = getDb();
   db.pragma('foreign_keys = OFF');
   db.exec(`
+    DROP TABLE IF EXISTS dataset_runs;
     DROP TABLE IF EXISTS audit_log;
     DROP TABLE IF EXISTS recovery_actions;
     DROP TABLE IF EXISTS recovery_cases;

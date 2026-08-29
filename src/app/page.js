@@ -141,12 +141,51 @@ export default function DashboardPage() {
           </button>
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => router.push('/simulator')}
+            onClick={() => router.push('/analyze')}
+            style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', boxShadow: '0 4px 14px rgba(59,130,246,0.35)' }}
           >
-            <IconSimulator size={14} />
-            <span>Sandbox</span>
+            <IconZap size={14} />
+            <span>Run Your Business Data</span>
           </button>
         </div>
+      </div>
+
+      {/* Dynamic Engine Callout Banner */}
+      <div
+        className="card card-elevated"
+        style={{
+          marginBottom: '20px',
+          padding: '16px 20px',
+          background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, rgba(52, 211, 153, 0.08) 100%)',
+          border: '1px solid rgba(59, 130, 246, 0.35)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '14px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div className="stat-icon-wrapper" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', width: '38px', height: '38px' }}>
+            <IconZap size={20} />
+          </div>
+          <div>
+            <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Interactive Judge Mode: Test Your Own Business Dataset
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Upload any CSV with transaction or dropoff records to run the real decision pipeline and observe personalized dunning strategies.
+            </div>
+          </div>
+        </div>
+
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => router.push('/analyze')}
+          style={{ padding: '6px 16px', fontWeight: 700 }}
+        >
+          <span>Launch Analysis Engine →</span>
+        </button>
       </div>
 
       {/* Primary Financial Metric Cards */}

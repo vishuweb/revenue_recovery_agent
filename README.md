@@ -6,125 +6,183 @@
 [![Hugeicons](https://img.shields.io/badge/Icons-Hugeicons-blue?style=flat-square)](https://hugeicons.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald?style=flat-square)](LICENSE)
 
-**Recovr** is an enterprise-grade autonomous revenue recovery and dunning orchestration engine designed for SaaS, subscription businesses, and modern billing infrastructure. It intelligently diagnoses payment failures, predicts recovery probability using customer lifetime value (LTV) and historical reliability, schedules optimal retries, and delivers personalized multi-channel dunning workflows with strict compliance guardrails.
+**Recovr** is an enterprise-grade autonomous revenue recovery and dunning orchestration engine designed for SaaS, e-commerce, subscription businesses, and modern billing infrastructure. It intelligently diagnoses payment failures, predicts recovery probability using customer lifetime value (LTV) and historical reliability, schedules optimal retries, enforces bounded compliance guardrails, and allows operators or judges to **upload and execute their own business datasets in real-time**.
 
 ---
 
 ## 📑 Table of Contents
 
-- [The Problem & Solution](#-the-problem--the-solution)
+- [Key Product Capabilities](#-key-product-capabilities)
+- [The "Run Your Business Data" Experience](#-the-run-your-business-data-experience)
 - [System Architecture & Workflow](#-system-architecture--workflow)
-- [Key Features](#-key-features)
+- [Real Decision Pipeline & Guardrails](#-real-decision-pipeline--guardrails)
 - [Tech Stack](#-tech-stack)
 - [Project Directory Structure](#-project-directory-structure)
 - [Database Schema & Data Models](#-database-schema--data-models)
 - [API Reference](#-api-reference)
 - [Getting Started](#-getting-started)
-- [Simulation & Testing Sandbox](#-simulation--testing-sandbox)
+- [Razorpay & Gateway Integration Architecture](#-razorpay--gateway-integration-architecture)
 - [Contributing & License](#-contributing--license)
 
 ---
 
-## 💡 The Problem & The Solution
+## 🚀 Key Product Capabilities
 
-### The Problem
-* **Involuntary Churn**: Over 40% of SaaS customer churn is involuntary, caused by expired credit cards, transient bank network timeouts, or temporary insufficient funds.
-* **Naive Dunning & Retries**: Blindly retrying payments immediately or spamming generic email notices burns customer trust, causes payment processor fraud flags, and loses high-value accounts.
+1. **"Run Your Business Data" Live Command Center (`/analyze`)**:
+   - Upload any custom CSV or choose from 4 curated business datasets (*SaaS Subscriptions*, *E-Commerce Dropoffs*, *B2B Overdue Invoices*, *Multi-Gateway Declines*).
+   - Intelligent column recognition maps diverse header conventions (`customer_id`, `amount`, `order_value`, `failure_reason`, `plan`, `ltv`, `discount_affinity`) automatically.
+   - Interactive column-mapping review matrix and pre-execution data risk preview.
+   - **Zero Hardcoded Numbers**: Every uploaded row flows through the real underlying classification, prediction, decision, and guardrail engines.
+2. **Live Agent Execution Telemetry**:
+   - Progressive 8-stage execution checklist with live progress counters and real-time streaming decision feeds.
+3. **Before vs After Financial Yield & 6-Stage Recovery Funnel**:
+   - High-impact Before vs After showcase comparing Gross Revenue at Risk against Net Recovered Revenue.
+   - Interactive 6-stage funnel: `Uploaded Records` $\rightarrow$ `Revenue-Risk Events` $\rightarrow$ `Eligible for Recovery` $\rightarrow$ `Agent Decisions` $\rightarrow$ `Actions Executed` $\rightarrow$ `Successful Recoveries`.
+4. **Deep Case Diagnostic Drawer**:
+   - Click any case to inspect multi-factor probability factors, strategy rationale, guardrail compliance notices, and chronological audit timelines.
+5. **Persistent Dataset Run History**:
+   - Saves all dataset runs in SQLite (`dataset_runs`) for retrospective benchmarking and comparison.
+6. **Executive Telemetry Dashboard (`/`) & Workbench (`/cases`)**:
+   - Financial telemetry, active dunning triage, and manual operator overrides.
+7. **Orchestrator Sandbox & Simulator (`/simulator`)**:
+   - Synthetic failure injection across soft declines, hard declines, high-value alerts, and checkout timeouts.
+8. **Compliance & Immutable Audit Ledger (`/audit`)**:
+   - Chronological audit trail recording all evaluations, guardrail checks, and actor actions.
 
-### The Recovr Solution
-* **Deterministic Classification**: Categorizes payment declines into Hard vs Soft errors, fraud indicators, customer-side issues, and technical gateway faults.
-* **Predictive Recovery Scoring**: Weighs MRR, Lifetime Value (LTV), discount affinity, and transaction frequency to prioritize high-impact interventions.
-* **Dynamic Decision Engine**: Selects the optimal recovery path (smart exponential retry delays, tokenized payment method update links, courteous retention concessions, or human analyst escalation).
-* **Immutable Compliance Audit Trail**: Every automated evaluation, discount offer, and retry attempt is logged with full transparency.
+---
+
+## 📊 The "Run Your Business Data" Experience
+
+Recovr provides a dynamic evaluation flow designed for business operators and judges:
+
+```
+┌───────────────────────────┐
+│     1. Upload CSV /       │
+│  Select Curated Dataset   │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│  2. Intelligent Column    │
+│    Mapping & Validation   │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│  3. Pre-Run Risk Preview  │
+│  (Total Vol, At Risk ₹)   │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│  4. Run Recovery Engine   │
+│ (Live 8-Stage Telemetry)  │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│  5. Dynamic Yield Funnel  │
+│  & Case Diagnostic Drawer │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 6. Persistent Run History │
+└───────────────────────────┘
+```
 
 ---
 
 ## 🏗️ System Architecture & Workflow
 
 ```
-                               ┌────────────────────────┐
-                               │ Payment Gateway Webhook│
-                               │   or Synthetic Event   │
-                               └───────────┬────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 1. Failure Classifier  │
-                               │  (Soft / Hard / Risk)  │
-                               └───────────┬────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 2. Predictive Modeler  │
-                               │ (LTV, History, Prob %) │
-                               └───────────┬────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 3. Priority Matrix     │
-                               │  (P0 Critical to P3)   │
-                               └───────────┬────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 4. Strategy Decider    │
-                               │ (Retry, Dunning, Offer)│
-                               └───────────┬────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 5. Safety Guardrails   │
-                               │ (Max retry, Cooldown)  │
-                               └───────────┬────────────┘
-                                           │
-                        ┌──────────────────┴──────────────────┐
-                        ▼                                     ▼
-             ┌─────────────────────┐               ┌─────────────────────┐
-             │ Automated Execution │               │  Operator Review    │
-             │ (Retry/Email/Link)  │               │  (Manual Override)  │
-             └──────────┬──────────┘               └──────────┬──────────┘
-                        │                                     │
-                        └──────────────────┬──────────────────┘
-                                           │
-                                           ▼
-                               ┌────────────────────────┐
-                               │ 6. Immutable Audit Log │
-                               │   & Telemetry Stream   │
-                               └────────────────────────┘
+                                 ┌──────────────────────────┐
+                                 │ Uploaded CSV / Webhook / │
+                                 │     Simulator Event      │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  1. Event Normalizer     │
+                                 │  & Flexible Schema Mapper│
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  2. Failure Classifier   │
+                                 │ (Soft, Hard, Behavioral) │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  3. Customer Context     │
+                                 │ (Tenure, LTV, Affinity)  │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  4. Predictive Engine    │
+                                 │ (Decay, History, Prob %) │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  5. Priority Matrix      │
+                                 │   (P0 Critical to P3)    │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  6. AI Strategy Decider  │
+                                 │  (Deterministic Fallback)│
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  7. Policy Guardrails    │
+                                 │(10% Disc Cap, Max Retry) │
+                                 └────────────┬─────────────┘
+                                              │
+                         ┌────────────────────┴────────────────────┐
+                         ▼                                         ▼
+              ┌─────────────────────┐                   ┌─────────────────────┐
+              │ Automated Execution │                   │  Operator Override  │
+              │(Retry/Link/Discount)│                   │  (Manual Approval)  │
+              └──────────┬──────────┘                   └──────────┬──────────┘
+                         │                                         │
+                         └────────────────────┬────────────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │ 8. Probabilistic Settle  │
+                                 │   & Adaptive Calibration │
+                                 └────────────┬─────────────┘
+                                              │
+                                              ▼
+                                 ┌──────────────────────────┐
+                                 │  9. Immutable Audit Log  │
+                                 │   & Historical Reports   │
+                                 └──────────────────────────┘
 ```
 
 ---
 
-## ✨ Key Features
+## 🛡️ Real Decision Pipeline & Guardrails
 
-### 1. Executive Telemetry Dashboard (`/`)
-* **Real-time Financial KPIs**: Instant tracking of Total Volume Processed, Volume At Risk, Net Recovered Revenue, and Recovery Conversion Rate.
-* **Interactive Visualizations**: 30-Day trend graphs, gateway decline root cause breakdowns, and pipeline stage distribution using [Recharts](https://recharts.org/).
-* **Priority Queue**: High-density table of active recovery cases with one-click intervention triggers.
+### 1. Differentiated Customer Decisions
+The engine never applies a generic one-size-fits-all action:
+* **Temporary Soft Declines** (`insufficient_funds`, `gateway_error`, `bank_server_down`): Computes statistical retry delays (e.g. 6 hours / 30 mins) with high recovery probability.
+* **Permanent Hard Declines** (`card_expired`, `invalid_card`, `international_blocked`): Halts retries and dispatches self-serve payment link with tokenization.
+* **High-LTV Enterprise Accounts**: Flagged as P0 Critical Impact and routed for white-glove support escalation.
+* **Checkout Dropoffs with High Discount Affinity**: Offers dynamic promotional courtesy discount.
+* **Exhausted Attempts / Low Probability**: Bounded by policy stop to prevent payment processor fees and customer annoyance.
 
-### 2. Recovery Case Workbench (`/cases`, `/cases/[id]`)
-* **Multi-stage Triage**: Filter by Open, In-Progress, Recovered, Failed, or Stopped status.
-* **AI Decision Inspector**: Transparent reasoning explaining why a specific retry cadence or outreach tone was selected.
-* **Step-by-step Execution Timeline**: Complete chronicle of retries, email/SMS dispatches, and gateway responses.
-* **Manual Override**: Operators can approve, immediately charge, escalate to a human analyst, or dismiss cases.
-
-### 3. Customer Portfolio & Risk Profiler (`/customers`, `/customers/[id]`)
-* **360° Account Telemetry**: Lifetime Value (LTV), Monthly Recurring Revenue (MRR), and payment success history.
-* **Churn Risk Gauge**: Quantitative risk score calculating default probability.
-* **Historical Ledger**: Unified log of past subscriptions, invoices, and payment attempts.
-
-### 4. Orchestrator Sandbox & Simulator (`/simulator`)
-* **Synthetic Failure Injection**: Test engine behavior against real-world scenarios:
-  * `Temporary Insufficient Funds` (Soft decline)
-  * `Chronic Failure Over Time` (High risk)
-  * `Enterprise High-Value Alert` (P0 critical)
-  * `Expired Card Hard Decline` (Payment update link)
-  * `Cart & Session Dropoffs` (Checkout timeouts)
-* **One-Click Batch Simulation**: Generate up to 50 concurrent cases or execute a scheduled pipeline sweep.
-
-### 5. Compliance & Immutable Audit Trail (`/audit`)
-* **Full Operational Auditability**: Structured log recording actor (`engine`, `system`, or `operator`), event type, description, and raw JSON payload.
-* **Copyable Payloads**: Inspect and copy event metadata for compliance reviews and debugging.
+### 2. Business Policy Guardrails
+* **`MAX_DISCOUNT_PERCENT`**: Automatically clamps discounts to a maximum 10% ceiling.
+* **`MAX_RETRY_ATTEMPTS`**: Caps retries at 5 attempts.
+* **`MIN_RETRY_INTERVAL`**: Enforces a 30-minute cooldown between retry charges.
+* **`MARGIN_PROTECTION`**: Prevents concession costs from exceeding 15% of the transaction value.
+* **`CUSTOMER_OPTED_OUT`**: Automatically suppresses outbound communication for opted-out users.
 
 ---
 
@@ -134,8 +192,8 @@
 * **Frontend**: [React 19](https://react.dev/), Custom Enterprise FinTech CSS Design System
 * **Iconography**: [Hugeicons React](https://hugeicons.com/) (`@hugeicons/react`, `@hugeicons/core-free-icons`)
 * **Charts & Analytics**: [Recharts](https://recharts.org/)
-* **Database**: [SQLite](https://sqlite.org/) via [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) with foreign key enforcement and indexed queries
-* **Utilities**: `uuid` for deterministic entity identification
+* **Database**: [SQLite](https://sqlite.org/) via [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) with WAL mode and performance indexing
+* **Utilities**: `uuid` for entity identification
 
 ---
 
@@ -147,12 +205,18 @@ revenue_recovery_agent/
 │   └── revenue_recovery.db       # Embedded SQLite database
 ├── src/
 │   ├── app/
+│   │   ├── analyze/              # "Run Your Business Data" command center
+│   │   │   └── page.js           # Upload, mapping, live execution & funnel UI
 │   │   ├── api/                  # REST API Route Handlers
 │   │   │   ├── audit/            # Audit trail stream
 │   │   │   ├── cases/            # Case retrieval & action dispatcher
 │   │   │   ├── cron/             # Background pipeline sweep runner
 │   │   │   ├── customers/        # Customer portfolio data
 │   │   │   ├── dashboard/        # High-level KPIs & chart feeds
+│   │   │   ├── dataset/
+│   │   │   │   ├── parse/        # CSV parsing & column mapping endpoint
+│   │   │   │   ├── run/          # Real engine pipeline execution endpoint
+│   │   │   │   └── runs/         # Dataset run history endpoints
 │   │   │   ├── events/           # External event ingestion
 │   │   │   ├── simulator/        # Sandbox scenario dispatcher
 │   │   │   └── webhooks/         # Payment gateway webhook receiver
@@ -172,6 +236,10 @@ revenue_recovery_agent/
 │   │   ├── layout.js             # App shell, sidebar & root layout
 │   │   └── page.js               # Main Executive Dashboard
 │   └── lib/
+│       ├── dataset/
+│       │   ├── demo-datasets.js  # Curated sample business datasets
+│       │   ├── parser.js         # CSV parser & column normalizer
+│       │   └── pipeline.js       # Complete recovery pipeline engine
 │       ├── db/
 │       │   ├── database.js       # SQLite connection manager & seed loader
 │       │   └── schema.sql        # Database tables, relationships & indexes
@@ -184,7 +252,7 @@ revenue_recovery_agent/
 │       │   └── prioritizer.js    # Urgency & value ranking matrix
 │       ├── providers/
 │       │   ├── provider.js       # Base payment gateway interface
-│       │   └── simulation.js     # Mock gateway execution provider
+│       │   └── simulation.js     # Gateway execution provider
 │       └── simulation/
 │           ├── generator.js      # Synthetic data generator
 │           └── scenarios.js      # Pre-built failure archetypes
@@ -198,15 +266,16 @@ revenue_recovery_agent/
 
 ## 🗄️ Database Schema & Data Models
 
-The database schema is defined in [`src/lib/db/schema.sql`](src/lib/db/schema.sql). Monetary amounts are stored in **paise** ($1\text{ INR} = 100\text{ paise}$) to avoid floating-point inaccuracies.
+The database schema is defined in [`src/lib/db/schema.sql`](src/lib/db/schema.sql). Monetary amounts are stored in **paise** ($1\text{ INR} = 100\text{ paise}$) to eliminate floating-point inaccuracies.
 
 ### Core Tables
-* **`customers`**: Subscriber records, MRR, Lifetime Value, payment method tokens, churn risk scores, and discount affinity.
+* **`dataset_runs`**: Historical dataset run records (total volume, revenue at risk, recovered amount, net yield, recovery rate, archetype, and stage summaries).
+* **`customers`**: Subscriber accounts, MRR, Lifetime Value, payment method tokens, churn risk scores, and discount affinity.
 * **`subscriptions`**: Active billing plans, recurring intervals, and failure counters.
 * **`invoices`**: Billing statements and payment due dates.
 * **`payments`**: Payment attempts, gateway decline codes, and transaction statuses.
 * **`recovery_cases`**: Active dunning cases, amount at risk, predicted recovery score, priority rating, and assigned strategy.
-* **`recovery_actions`**: Individual dispatched interventions (scheduled retries, dunning notices, discounts offered).
+* **`recovery_actions`**: Dispatched interventions (scheduled retries, dunning notices, discounts offered).
 * **`audit_log`**: Immutable chronological history of all engine evaluations and operator overrides.
 * **`events`**: Ingested webhook and lifecycle events.
 
@@ -216,12 +285,15 @@ The database schema is defined in [`src/lib/db/schema.sql`](src/lib/db/schema.sq
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
+| **`/api/dataset/parse`** | `POST` | Parses uploaded CSV, auto-detects column mappings, and generates pre-run risk summary. |
+| **`/api/dataset/run`** | `POST` | Executes normalized dataset through the full recovery pipeline and returns dynamic yield metrics. |
+| **`/api/dataset/runs`** | `GET` | Lists historical dataset runs with performance statistics. |
+| **`/api/dataset/runs/[id]`** | `GET` | Retrieves full run summary and case breakdown for a past dataset evaluation. |
 | **`/api/dashboard`** | `GET` | Fetches aggregate recovery KPIs, 30-day trends, decline reasons, and recent cases. |
 | **`/api/cases`** | `GET` | Lists recovery cases with support for `status`, `sortBy`, and `search` query parameters. |
-| **`/api/cases/[id]`** | `GET` | Retrieves full diagnostic data, audit trail, customer info, and action steps for a case. |
+| **`/api/cases/[id]`** | `GET` | Retrieves diagnostic data, audit trail, customer info, and action steps for a case. |
 | **`/api/cases/[id]`** | `PATCH` | Executes an action (`approve`, `execute`, `escalate`, `stop`, or appends notes). |
 | **`/api/customers`** | `GET` | Returns the customer directory with risk scores and LTV metrics. |
-| **`/api/customers/[id]`** | `GET` | Returns 360° customer profile, past payments, and case history. |
 | **`/api/simulator`** | `POST` | Dispatches sandbox commands (`seed`, `trigger_scenario`, `bulk_scenarios`, `simulate_recovery`). |
 | **`/api/cron`** | `GET` | Executes automated batch retry evaluations across all active recovery cases. |
 | **`/api/audit`** | `GET` | Returns chronological audit log entries with optional `entity_type` filter. |
@@ -248,16 +320,17 @@ The database schema is defined in [`src/lib/db/schema.sql`](src/lib/db/schema.sq
    npm install
    ```
 
-3. **Initialize & Start the Development Server**:
+3. **Start the Development Server**:
    ```bash
    npm run dev
    ```
 
 4. **Access the Dashboard**:
-   Open your browser and navigate to **[http://localhost:3000](http://localhost:3000)**. The database will automatically initialize and seed with realistic simulation cases on first launch.
+   Open your browser at **[http://localhost:3000](http://localhost:3000)**.
+   - Navigate to **"Run Your Business Data"** (`/analyze`) to upload and run your own datasets.
+   - Navigate to **"Orchestrator Sandbox"** (`/simulator`) to inject synthetic real-time failure scenarios.
 
 ### Production Build
-To create an optimized production build:
 ```bash
 npm run build
 npm run start
@@ -265,20 +338,28 @@ npm run start
 
 ---
 
-## 🧪 Simulation & Testing Sandbox
+## 💳 Razorpay & Gateway Integration Architecture
 
-To test how the engine reacts to various payment issues without connecting a live billing gateway:
+Recovr uses a modular gateway abstraction layer:
 
-1. Navigate to **`/simulator`** in the application.
-2. Click **"Re-seed Dataset"** to reset the environment with a clean set of test subscribers.
-3. Click any **"Inject Event"** button on the scenario cards to simulate real-world failures (e.g. *Temporary Insufficient Funds*, *Expired Card*, *Cart Abandonment*).
-4. Watch the engine compute recovery probabilities, assign priority scores, and select the optimal dunning sequence in real time.
-5. Click **"Run Pipeline"** in the top navigation bar to simulate automated retry evaluation cycles.
+```
+Uploaded Dataset / Webhook
+            ↓
+  Normalized Event Model
+            ↓
+  Revenue Recovery Engine
+            ↓
+     Payment Provider
+     ├── Simulation / Mock Provider
+     └── Razorpay Integration Provider
+```
+
+* The core engine is decoupled from specific gateways, allowing plug-and-play switching between simulation mode and live payment gateways (e.g. Razorpay, Stripe) without altering recovery logic.
 
 ---
 
 ## 🤝 Contributing & License
 
-Contributions, issues, and feature requests are welcome! Feel free to open a pull request or issue.
+Contributions, issues, and feature requests are welcome!
 
 Distributed under the **MIT License**. See `LICENSE` for more information.

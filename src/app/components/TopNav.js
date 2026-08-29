@@ -21,6 +21,7 @@ export function TopNav() {
 
   const getPageTitle = () => {
     if (pathname === '/') return 'Overview';
+    if (pathname.startsWith('/analyze')) return 'Run Your Business Data';
     if (pathname.startsWith('/cases')) return pathname === '/cases' ? 'Recovery Cases' : 'Case Detail';
     if (pathname.startsWith('/customers')) return pathname === '/customers' ? 'Customer Portfolio' : 'Customer Profile';
     if (pathname.startsWith('/simulator')) return 'Orchestrator Sandbox';
@@ -95,11 +96,12 @@ export function TopNav() {
 
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => router.push('/simulator')}
-            title="Launch Sandbox"
+            onClick={() => router.push('/analyze')}
+            title="Upload and Run Your Dataset"
+            style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}
           >
-            <IconSimulator size={15} />
-            <span>Sandbox</span>
+            <IconZap size={15} />
+            <span>Run Your Data</span>
           </button>
         </div>
       </header>

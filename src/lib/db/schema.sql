@@ -136,6 +136,26 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS dataset_runs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  filename TEXT,
+  dataset_type TEXT NOT NULL DEFAULT 'mixed',
+  total_records INTEGER NOT NULL DEFAULT 0,
+  unique_customers INTEGER NOT NULL DEFAULT 0,
+  total_volume INTEGER NOT NULL DEFAULT 0,
+  revenue_at_risk INTEGER NOT NULL DEFAULT 0,
+  recovered_amount INTEGER NOT NULL DEFAULT 0,
+  intervention_cost INTEGER NOT NULL DEFAULT 0,
+  net_recovered INTEGER NOT NULL DEFAULT 0,
+  recovery_rate REAL NOT NULL DEFAULT 0.0,
+  interventions_count INTEGER NOT NULL DEFAULT 0,
+  escalations_count INTEGER NOT NULL DEFAULT 0,
+  stopped_count INTEGER NOT NULL DEFAULT 0,
+  run_summary TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
@@ -155,3 +175,4 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_processed ON events(processed);
 CREATE INDEX IF NOT EXISTS idx_events_customer ON events(customer_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_runs_created ON dataset_runs(created_at DESC);

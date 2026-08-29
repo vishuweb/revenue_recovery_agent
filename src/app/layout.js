@@ -7,6 +7,7 @@ import { ToastProvider } from './components/ToastContext';
 import { TopNav } from './components/TopNav';
 import {
   IconDashboard,
+  IconAnalytics,
   IconCases,
   IconCustomers,
   IconSimulator,
@@ -19,6 +20,7 @@ export default function RootLayout({ children }) {
   const pathname = usePathname();
   const navLinks = [
     { href: '/', label: 'Overview', icon: IconDashboard, badge: 'Live' },
+    { href: '/analyze', label: 'Run Your Business Data', icon: IconAnalytics, badge: 'Dynamic' },
     { href: '/cases', label: 'Recovery Cases', icon: IconCases },
     { href: '/customers', label: 'Customer Portfolio', icon: IconCustomers },
     { href: '/simulator', label: 'Orchestrator Sandbox', icon: IconSimulator, badge: 'Sandbox' },
