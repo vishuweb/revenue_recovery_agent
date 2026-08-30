@@ -1,17 +1,17 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 
 const GRADIENTS = [
-  'linear-gradient(135deg, #1e293b, #334155)',
-  'linear-gradient(135deg, #1e3a8a, #2563eb)',
-  'linear-gradient(135deg, #065f46, #059669)',
-  'linear-gradient(135deg, #3730a3, #4f46e5)',
-  'linear-gradient(135deg, #075985, #0284c7)',
-  'linear-gradient(135deg, #78350f, #d97706)'
+  'linear-gradient(135deg, #00ADB4, #00FFF5)',
+  'linear-gradient(135deg, #212832, #3B3E47)',
+  'linear-gradient(135deg, #008187, #00ADB4)',
+  'linear-gradient(135deg, #28303d, #525763)',
+  'linear-gradient(135deg, #005f63, #00d2da)',
+  'linear-gradient(135deg, #181d26, #3B3E47)'
 ];
 
-export function CustomerAvatar({ name = 'Customer', size = 32, showStatus = false, statusColor = 'var(--emerald)' }) {
+export function CustomerAvatar({ name = 'Customer', size = 32, showStatus = false, statusColor = '#00FFF5' }) {
   const getInitials = (str) => {
     if (!str) return 'C';
     const parts = str.trim().split(/\s+/);
@@ -44,8 +44,8 @@ export function CustomerAvatar({ name = 'Customer', size = 32, showStatus = fals
           color: '#ffffff',
           fontWeight: 700,
           fontSize: `${Math.max(10, Math.floor(size * 0.38))}px`,
-          border: '1px solid rgba(255, 255, 255, 0.12)',
-          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)'
+          border: '1px solid #3B3E47',
+          boxShadow: '0 2px 6px rgba(0, 0, 0, 0.35)'
         }}
         title={name}
       >
@@ -61,8 +61,8 @@ export function CustomerAvatar({ name = 'Customer', size = 32, showStatus = fals
             height: `${Math.max(7, Math.floor(size * 0.28))}px`,
             borderRadius: '50%',
             backgroundColor: statusColor,
-            border: '2px solid #0b0e16',
-            boxShadow: `0 0 4px ${statusColor}`
+            border: '2px solid #212832',
+            boxShadow: `0 0 5px ${statusColor}`
           }}
         />
       )}
