@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -18,8 +18,7 @@ import {
   IconWarning,
   IconSuccess,
   IconClock,
-  IconDiscount,
-  IconChevronRight
+  IconDiscount
 } from '../../components/Icons';
 
 export default function CaseDetailPage({ params }) {
@@ -171,22 +170,22 @@ export default function CaseDetailPage({ params }) {
             <CustomerAvatar name={customer?.name || 'Customer'} size={46} />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{customer?.name}</h1>
+                <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#ffffff' }}>{customer?.name}</h1>
                 <span className="badge primary">{customer?.plan_name || 'Standard Tier'}</span>
                 {getStatusBadge(c.status)}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', color: 'var(--text-secondary)', fontSize: '12.5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', color: '#cbd5e1', fontSize: '12.5px' }}>
                 <span>{customer?.company || 'Company'}</span>
                 <span>•</span>
                 <span>{customer?.email}</span>
                 <span>•</span>
-                <span className="font-mono" style={{ color: 'var(--text-dim)' }}>ID: {c.id.substring(0, 8)}</span>
+                <span className="font-mono" style={{ color: '#5f6d7e' }}>ID: {c.id.substring(0, 8)}</span>
               </div>
             </div>
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Amount At Risk
             </div>
             <div className="font-mono" style={{ fontSize: '24px', fontWeight: 700, color: '#fb7185', marginTop: '2px' }}>
@@ -207,10 +206,10 @@ export default function CaseDetailPage({ params }) {
           </div>
           <div style={{ marginTop: '4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <span className="stat-value" style={{ color: '#34d399' }}>
+              <span className="stat-value" style={{ color: '#00FFF5' }}>
                 {Math.round((c.recovery_probability || 0.75) * 100)}%
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>confidence</span>
+              <span style={{ fontSize: '11px', color: '#8e9ba9' }}>confidence</span>
             </div>
             <ProbabilityBar value={c.recovery_probability} />
           </div>
@@ -224,7 +223,7 @@ export default function CaseDetailPage({ params }) {
             </div>
           </div>
           <span className="stat-value" style={{ color: (c.priority_score || 0) > 70 ? '#fb7185' : '#fbbf24' }}>
-            {Math.round(c.priority_score || 0)} <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>/ 100</span>
+            {Math.round(c.priority_score || 0)} <span style={{ fontSize: '13px', color: '#5f6d7e' }}>/ 100</span>
           </span>
           <div className="stat-footer">
             <span>{(c.priority_score || 0) > 70 ? 'P0 Critical Impact' : 'Standard Priority'}</span>
@@ -239,7 +238,7 @@ export default function CaseDetailPage({ params }) {
             </div>
           </div>
           <span className="stat-value">
-            {c.attempts_made} <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>/ {c.max_attempts || 5}</span>
+            {c.attempts_made} <span style={{ fontSize: '13px', color: '#5f6d7e' }}>/ {c.max_attempts || 5}</span>
           </span>
           <div className="stat-footer">
             <span>Attempts completed</span>
@@ -271,7 +270,7 @@ export default function CaseDetailPage({ params }) {
           <div className="card-header">
             <div>
               <h3 className="card-title">
-                <IconZap size={16} color="#60a5fa" />
+                <IconZap size={16} color="#00FFF5" />
                 <span>Recovery Execution Strategy</span>
               </h3>
               <p className="card-subtitle">Automated plan calculated based on customer history and decline type</p>
@@ -279,97 +278,27 @@ export default function CaseDetailPage({ params }) {
             <span className="badge primary">Pipeline Active</span>
           </div>
 
-          <div style={{ background: 'var(--surface-color)', border: '1px solid var(--glass-border)', borderRadius: 'var(--border-radius-card)', padding: '16px', marginBottom: '16px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.04em' }}>
+          <div style={{ background: '#181d26', border: '1px solid #3B3E47', borderRadius: 'var(--border-radius-card)', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 700, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.04em' }}>
               Prescribed Intervention
             </div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: '#93c5fd' }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#00FFF5' }}>
               {c.recommended_action || 'Smart Dunning Sequence with Exponential Delay'}
             </div>
           </div>
 
-          <div style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--glass-border)', borderRadius: 'var(--border-radius-card)', padding: '16px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h4 style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Strategy Rationale
-              </h4>
-              {c.attribution_type && c.attribution_type !== 'unknown' && (
-                <span className={`badge ${c.attribution_type === 'recovered' ? 'success' : c.attribution_type === 'organic' ? 'warning' : 'primary'}`} style={{ fontSize: '10px' }}>
-                  Attribution: {c.attribution_type}
-                </span>
-              )}
-            </div>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          <div style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid #3B3E47', borderRadius: 'var(--border-radius-card)', padding: '16px', marginBottom: '20px' }}>
+            <h4 style={{ fontSize: '11.5px', fontWeight: 700, color: '#8e9ba9', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Strategy Rationale
+            </h4>
+            <p style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.6 }}>
               {c.ai_reasoning || 'Based on customer tenure, payment method error type, and recovery probability model, this tailored notification combined with smart retry scheduling maximizes payment conversion while minimizing churn risk.'}
             </p>
           </div>
 
-          {/* NEV Candidate Evaluation Matrix */}
-          {c.candidate_actions && (() => {
-            try {
-              const candidates = typeof c.candidate_actions === 'string' ? JSON.parse(c.candidate_actions) : c.candidate_actions;
-              if (!Array.isArray(candidates) || candidates.length === 0) return null;
-              return (
-                <div style={{ marginBottom: '20px', background: 'var(--bg-subtle)', border: '1px solid var(--glass-border)', borderRadius: 'var(--border-radius-card)', padding: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Candidate Action NEV Matrix (Net Expected Value Optimization)
-                    </span>
-                    <span style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>
-                      NEV = (Prob × Risk) - Cost
-                    </span>
-                  </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table" style={{ fontSize: '11.5px', margin: 0 }}>
-                      <thead>
-                        <tr>
-                          <th>Action Candidate</th>
-                          <th>Win Prob</th>
-                          <th>Expected Recovery</th>
-                          <th>Intervention Cost</th>
-                          <th>Net Expected Value</th>
-                          <th>Decision Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {candidates.map((cand, idx) => {
-                          const isSel = cand.selected || cand.action === c.recommended_action;
-                          return (
-                            <tr key={idx} style={{ background: isSel ? 'rgba(37, 99, 235, 0.1)' : undefined }}>
-                              <td style={{ fontWeight: isSel ? 700 : 500, color: isSel ? '#93c5fd' : 'var(--text-primary)' }}>
-                                {cand.action} {cand.discountPercent ? `(${cand.discountPercent}%)` : ''}
-                              </td>
-                              <td className="font-mono">{Math.round((cand.probability || 0) * 100)}%</td>
-                              <td className="font-mono">{formatCurrency(cand.expectedRecovery || 0)}</td>
-                              <td className="font-mono" style={{ color: cand.interventionCost > 0 ? '#fb7185' : 'var(--text-dim)' }}>
-                                {formatCurrency(cand.interventionCost || 0)}
-                              </td>
-                              <td className="font-mono" style={{ fontWeight: 700, color: cand.nev > 0 ? '#34d399' : '#fb7185' }}>
-                                {formatCurrency(cand.nev || 0)}
-                              </td>
-                              <td>
-                                {isSel ? (
-                                  <span className="badge success" style={{ fontSize: '9.5px' }}>SELECTED (OPTIMAL)</span>
-                                ) : cand.nev <= 0 ? (
-                                  <span className="badge danger" style={{ fontSize: '9.5px' }}>NEGATIVE NEV</span>
-                                ) : (
-                                  <span className="badge secondary" style={{ fontSize: '9.5px' }}>RUNNER UP</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            } catch (e) { return null; }
-          })()}
-
           {/* Action Dispatcher Controls */}
           <div>
-            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#8e9ba9', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '0.04em' }}>
               Intervention Controls
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -417,7 +346,7 @@ export default function CaseDetailPage({ params }) {
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">
-              <IconUser size={16} color="var(--text-secondary)" />
+              <IconUser size={16} color="#cbd5e1" />
               <span>Customer Telemetry</span>
             </h3>
             {customer && (
@@ -429,42 +358,42 @@ export default function CaseDetailPage({ params }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account</div>
-              <div style={{ fontSize: '13.5px', fontWeight: 600, marginTop: '2px', color: 'var(--text-primary)' }}>{customer?.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{customer?.company}</div>
+              <div style={{ color: '#8e9ba9', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account</div>
+              <div style={{ fontSize: '13.5px', fontWeight: 600, marginTop: '2px', color: '#ffffff' }}>{customer?.name}</div>
+              <div style={{ fontSize: '12px', color: '#5f6d7e' }}>{customer?.company}</div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Monthly (MRR)</div>
-                <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, color: '#34d399', marginTop: '2px' }}>
+                <div style={{ color: '#8e9ba9', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Monthly (MRR)</div>
+                <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, color: '#00FFF5', marginTop: '2px' }}>
                   {formatCurrency(customer?.mrr)}
                 </div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Lifetime Value</div>
-                <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
+                <div style={{ color: '#8e9ba9', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Lifetime Value</div>
+                <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px', color: '#ffffff' }}>
                   {formatCurrency(customer?.lifetime_value)}
                 </div>
               </div>
             </div>
 
             <div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Payment Success History</div>
+              <div style={{ color: '#8e9ba9', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Payment Success History</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                <span className="font-mono" style={{ fontSize: '12px', fontWeight: 700, color: '#34d399' }}>
+                <span className="font-mono" style={{ fontSize: '12px', fontWeight: 700, color: '#00FFF5' }}>
                   {customer?.payment_success_rate || 95}%
                 </span>
-                <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', overflow: 'hidden' }}>
-                  <div style={{ width: `${customer?.payment_success_rate || 95}%`, height: '100%', background: '#10b981' }} />
+                <div style={{ flex: 1, height: '6px', background: '#3B3E47', borderRadius: '9999px', overflow: 'hidden' }}>
+                  <div style={{ width: `${customer?.payment_success_rate || 95}%`, height: '100%', background: 'linear-gradient(90deg, #00ADB4, #00FFF5)' }} />
                 </div>
               </div>
             </div>
 
             {subscription && (
-              <div style={{ padding: '10px 12px', background: 'var(--surface-color)', border: '1px solid var(--glass-border)', borderRadius: '8px', fontSize: '12px' }}>
-                <div style={{ color: 'var(--text-muted)' }}>Subscription Plan</div>
-                <div style={{ fontWeight: 600, marginTop: '2px', color: 'var(--text-primary)' }}>{subscription.plan_id || 'Pro Tier'}</div>
+              <div style={{ padding: '10px 12px', background: 'var(--surface-elevated)', border: '1px solid #3B3E47', borderRadius: '8px', fontSize: '12px' }}>
+                <div style={{ color: '#8e9ba9' }}>Subscription Plan</div>
+                <div style={{ fontWeight: 600, marginTop: '2px', color: '#ffffff' }}>{subscription.plan_id || 'Pro Tier'}</div>
               </div>
             )}
           </div>
@@ -477,7 +406,7 @@ export default function CaseDetailPage({ params }) {
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">
-              <IconClock size={16} color="var(--text-secondary)" />
+              <IconClock size={16} color="#cbd5e1" />
               <span>Pipeline Execution Timeline</span>
             </h3>
             <span className="badge muted">{actions?.length || 0} events</span>
@@ -494,12 +423,12 @@ export default function CaseDetailPage({ params }) {
                     <div className="timeline-line" />
                   </div>
                   <div className="timeline-content">
-                    <div style={{ background: 'var(--surface-color)', border: '1px solid var(--glass-border)', borderRadius: '8px', padding: '12px 14px' }}>
+                    <div style={{ background: 'var(--surface-elevated)', border: '1px solid #3B3E47', borderRadius: '8px', padding: '12px 14px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#93c5fd' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#00FFF5' }}>
                           {a.action_type ? a.action_type.replace('_', ' ').toUpperCase() : 'ACTION'}
                         </span>
-                        <span className="font-mono" style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                        <span className="font-mono" style={{ fontSize: '11px', color: '#5f6d7e' }}>
                           {new Date(a.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
@@ -512,13 +441,13 @@ export default function CaseDetailPage({ params }) {
                       </div>
 
                       {a.ai_reasoning && (
-                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
                           {a.ai_reasoning}
                         </p>
                       )}
 
                       {a.result && (
-                        <div className="font-mono" style={{ marginTop: '6px', padding: '6px 8px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '11.5px', color: 'var(--text-dim)' }}>
+                        <div className="font-mono" style={{ marginTop: '6px', padding: '6px 8px', background: '#12151d', borderRadius: '6px', fontSize: '11.5px', color: '#5f6d7e' }}>
                           Outcome: {a.result}
                         </div>
                       )}
@@ -528,7 +457,7 @@ export default function CaseDetailPage({ params }) {
               ))}
             </div>
           ) : (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ padding: '32px', textAlign: 'center', color: '#8e9ba9' }}>
               No automated outreach actions dispatched yet.
             </div>
           )}
@@ -538,7 +467,7 @@ export default function CaseDetailPage({ params }) {
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">
-              <IconAudit size={16} color="var(--text-secondary)" />
+              <IconAudit size={16} color="#cbd5e1" />
               <span>Case Audit Trail</span>
             </h3>
             <span className="badge info">Immutable</span>
@@ -565,25 +494,25 @@ export default function CaseDetailPage({ params }) {
                 key={entry.id}
                 style={{
                   padding: '10px 12px',
-                  border: '1px solid var(--glass-border)',
+                  border: '1px solid #3B3E47',
                   borderRadius: '8px',
-                  background: 'var(--surface-color)'
+                  background: 'var(--surface-elevated)'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                   <span className="badge primary" style={{ fontSize: '10.5px' }}>{entry.event_type}</span>
-                  <span className="font-mono" style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                  <span className="font-mono" style={{ fontSize: '11px', color: '#5f6d7e' }}>
                     {new Date(entry.created_at).toLocaleTimeString()}
                   </span>
                 </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-primary)', marginTop: '4px' }}>{entry.description}</p>
-                <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '4px' }}>
-                  Actor: <strong style={{ color: 'var(--text-secondary)' }}>{entry.actor}</strong>
+                <p style={{ fontSize: '12px', color: '#ffffff', marginTop: '4px' }}>{entry.description}</p>
+                <div style={{ fontSize: '10.5px', color: '#5f6d7e', marginTop: '4px' }}>
+                  Actor: <strong style={{ color: '#cbd5e1' }}>{entry.actor}</strong>
                 </div>
               </div>
             ))}
             {(!auditEntries || auditEntries.length === 0) && (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div style={{ padding: '24px', textAlign: 'center', color: '#8e9ba9' }}>
                 No audit entries recorded yet.
               </div>
             )}

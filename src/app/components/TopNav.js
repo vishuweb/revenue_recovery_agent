@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -7,9 +7,9 @@ import { useToast } from './ToastContext';
 import {
   IconSearch,
   IconRefresh,
-  IconChevronRight,
-  IconBell,
-  IconSparkles
+  IconSimulator,
+  IconZap,
+  IconChevronRight
 } from './Icons';
 
 export function TopNav() {
@@ -19,17 +19,14 @@ export function TopNav() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isSweeping, setIsSweeping] = useState(false);
 
-  const getPageInfo = () => {
-    if (pathname === '/') return { title: 'Overview', section: 'Dashboard' };
-    if (pathname.startsWith('/analyze')) return { title: 'Run Your Data', section: 'Intelligence' };
-    if (pathname.startsWith('/cases')) return { title: pathname === '/cases' ? 'Recovery Cases' : 'Case Detail', section: 'Operations' };
-    if (pathname.startsWith('/customers')) return { title: pathname === '/customers' ? 'Customer Portfolio' : 'Customer Profile', section: 'Operations' };
-    if (pathname.startsWith('/simulator')) return { title: 'Orchestrator Sandbox', section: 'Tools' };
-    if (pathname.startsWith('/audit')) return { title: 'Compliance & Audit', section: 'Tools' };
-    return { title: 'Overview', section: 'Dashboard' };
+  const getPageTitle = () => {
+    if (pathname === '/') return 'Overview';
+    if (pathname.startsWith('/cases')) return pathname === '/cases' ? 'Recovery Cases' : 'Case Detail';
+    if (pathname.startsWith('/customers')) return pathname === '/customers' ? 'Customer Portfolio' : 'Customer Profile';
+    if (pathname.startsWith('/simulator')) return 'Orchestrator Sandbox';
+    if (pathname.startsWith('/audit')) return 'Compliance & Audit';
+    return 'Operations';
   };
-
-  const { title, section } = getPageInfo();
 
   const handleRunSweep = async () => {
     setIsSweeping(true);
@@ -37,7 +34,7 @@ export function TopNav() {
     try {
       const res = await fetch('/api/cron');
       if (res.ok) {
-        toast.success('Pipeline sweep completed. Cases updated.');
+        toast.success('Pipeline sweep completed successfully. Cases updated.');
         router.refresh();
       } else {
         toast.warning('Pipeline sweep concluded with warnings.');
@@ -53,12 +50,10 @@ export function TopNav() {
     <>
       <header className="top-nav">
         <div className="top-nav-left">
-          <div className="breadcrumb">
-            <span>{section}</span>
-            <span className="breadcrumb-sep">
-              <IconChevronRight size={12} color="var(--text-faint)" />
-            </span>
-            <span className="breadcrumb-current">{title}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#8e9ba9' }}>
+            <span>Operations</span>
+            <IconChevronRight size={12} color="#5f6d7e" />
+            <span style={{ color: '#ffffff', fontWeight: 600 }}>{getPageTitle()}</span>
           </div>
         </div>
 
@@ -66,14 +61,26 @@ export function TopNav() {
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => setIsCommandOpen(true)}
-            title="Quick Search and Navigation (Ctrl+K)"
-            style={{ minWidth: '190px', justifyContent: 'space-between', color: 'var(--text-secondary)', gap: '10px' }}
+            title="Quick Search & Navigation (Ctrl+K)"
+            style={{ minWidth: '210px', justifyContent: 'space-between', color: '#cbd5e1' }}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <IconSearch size={13} color="var(--text-muted)" />
-              <span style={{ fontSize: '12px' }}>Quick Search</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <IconSearch size={14} color="#8e9ba9" />
+              <span style={{ fontSize: '12.5px' }}>Quick Search</span>
             </span>
-            <span className="kbd">Ctrl K</span>
+            <kbd
+              style={{
+                fontSize: '10px',
+                padding: '2px 5px',
+                background: '#212832',
+                border: '1px solid #3B3E47',
+                borderRadius: '4px',
+                color: '#00FFF5',
+                fontFamily: 'monospace'
+              }}
+            >
+              ⌘K
+            </kbd>
           </button>
 
           <button
@@ -82,36 +89,17 @@ export function TopNav() {
             disabled={isSweeping}
             title="Execute scheduled recovery evaluation across active cases"
           >
-            <IconRefresh size={13} className={isSweeping ? 'spin' : ''} color="var(--text-secondary)" />
+            <IconRefresh size={14} className={isSweeping ? 'spin' : ''} />
             <span>{isSweeping ? 'Evaluating...' : 'Run Pipeline'}</span>
           </button>
 
           <button
-            className="btn btn-ghost btn-icon"
-            title="Notifications"
-            style={{ color: 'var(--text-muted)', position: 'relative' }}
-          >
-            <IconBell size={16} />
-            <span
-              style={{
-                position: 'absolute',
-                top: '6px', right: '6px',
-                width: '6px', height: '6px',
-                borderRadius: '50%',
-                background: 'var(--danger)',
-                border: '1.5px solid var(--bg-color)',
-                boxShadow: '0 0 5px var(--danger-glow)'
-              }}
-            />
-          </button>
-
-          <button
             className="btn btn-primary btn-sm"
-            onClick={() => router.push('/analyze')}
-            title="Upload and Analyze Your Dataset"
+            onClick={() => router.push('/simulator')}
+            title="Launch Sandbox"
           >
-            <IconSparkles size={14} />
-            <span>Run Your Data</span>
+            <IconSimulator size={15} />
+            <span>Sandbox</span>
           </button>
         </div>
       </header>

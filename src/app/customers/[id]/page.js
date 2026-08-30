@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -7,15 +7,14 @@ import { formatCurrency } from '../../page';
 import { CustomerAvatar } from '../../components/CustomerAvatar';
 import { useToast } from '../../components/ToastContext';
 import {
-  IconRefresh,
   IconUser,
   IconCard,
   IconWarning,
   IconSuccess,
-  IconRupee,
-  IconShield,
+  IconCases,
+  IconRefresh,
   IconCoins,
-  IconDiscount,
+  IconTrendUp,
   IconChevronRight
 } from '../../components/Icons';
 
@@ -39,7 +38,7 @@ export default function CustomerDetailPage({ params }) {
       }
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load customer profile');
+      toast.error('Failed to load customer');
     } finally {
       setLoading(false);
     }
@@ -52,10 +51,10 @@ export default function CustomerDetailPage({ params }) {
   if (loading || !data) {
     return (
       <div className="animate-fade-in">
-        <div className="skeleton" style={{ height: '36px', width: '150px', marginBottom: '16px' }} />
-        <div className="skeleton" style={{ height: '90px', marginBottom: '20px' }} />
-        <div className="grid-cols-3" style={{ marginBottom: '20px' }}>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div className="skeleton" style={{ height: '36px', width: '140px', marginBottom: '16px' }} />
+        <div className="skeleton" style={{ height: '100px', marginBottom: '20px' }} />
+        <div className="grid-cols-4" style={{ marginBottom: '20px' }}>
+          {[1, 2, 3, 4].map((i) => (
             <div key={i} className="skeleton" style={{ height: '110px' }} />
           ))}
         </div>
@@ -63,14 +62,12 @@ export default function CustomerDetailPage({ params }) {
     );
   }
 
-  const { customer, paymentHistory, recoveryCases, stats } = data;
+  const { customer, subscription, payments, recoveryCases, stats } = data;
 
   const getStatusBadge = (status) => {
     switch (status) {
       case 'recovered':
-      case 'succeeded':
-      case 'success':
-        return <span className="badge success">Success</span>;
+        return <span className="badge success">Recovered</span>;
       case 'failed':
         return <span className="badge danger">Failed</span>;
       case 'open':
@@ -84,10 +81,10 @@ export default function CustomerDetailPage({ params }) {
 
   return (
     <div className="animate-fade-in">
-      {/* Header Navigation */}
+      {/* Header Back Button */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <button className="btn btn-secondary btn-sm" onClick={() => router.push('/customers')}>
-          ← Back to Customers
+          ← Back to Portfolio
         </button>
         <button className="btn btn-secondary btn-sm" onClick={fetchCustomer}>
           <IconRefresh size={13} />
@@ -95,98 +92,180 @@ export default function CustomerDetailPage({ params }) {
         </button>
       </div>
 
-      {/* Customer Header Banner */}
-      <div className="card" style={{ marginBottom: '20px', padding: '20px 24px' }}>
+      {/* Customer Header Card */}
+      <div className="card" style={{ marginBottom: '20px', padding: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <CustomerAvatar name={customer?.name || 'Customer'} size={48} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+            <CustomerAvatar name={customer?.name || 'Customer'} size={52} />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{customer?.name}</h1>
-                <span className="badge primary">{customer?.plan_name || 'Standard Tier'}</span>
+                <h1 style={{ fontSize: '22px', fontWeight: 700, margin: 0, color: '#ffffff' }}>{customer?.name}</h1>
+                <span className="badge primary">{customer?.plan_name || 'Pro Tier'}</span>
+                {customer?.churn_risk_score > 0.6 ? (
+                  <span className="badge danger">High Churn Risk</span>
+                ) : (
+                  <span className="badge success">Healthy Account</span>
+                )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', color: 'var(--text-secondary)', fontSize: '12.5px' }}>
-                <span>{customer?.company || 'Direct'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', color: '#cbd5e1', fontSize: '13px' }}>
+                <span>{customer?.company || 'Company'}</span>
                 <span>•</span>
                 <span>{customer?.email}</span>
                 <span>•</span>
-                <span className="font-mono" style={{ color: 'var(--text-dim)' }}>ID: {customer?.id?.substring(0, 8)}</span>
+                <span className="font-mono" style={{ color: '#5f6d7e' }}>ID: {customer?.id?.substring(0, 8)}</span>
               </div>
             </div>
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Monthly Recurring (MRR)</div>
-            <div className="font-mono" style={{ fontSize: '24px', fontWeight: 700, color: '#34d399', marginTop: '2px' }}>
-              {formatCurrency(customer?.mrr)}
+            <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Lifetime Value
+            </div>
+            <div className="font-mono" style={{ fontSize: '26px', fontWeight: 700, color: '#00FFF5', marginTop: '2px' }}>
+              {formatCurrency(customer?.lifetime_value)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Metrics Row */}
-      <div className="grid-cols-3" style={{ marginBottom: '20px' }}>
+      {/* Stat Cards */}
+      <div className="grid-cols-4" style={{ marginBottom: '20px' }}>
         <div className="card stat-card">
           <div className="stat-header">
-            <span className="stat-label">Lifetime Value (LTV)</span>
+            <span className="stat-label">Monthly Revenue (MRR)</span>
             <div className="stat-icon-wrapper">
               <IconCoins size={16} />
             </div>
           </div>
-          <span className="stat-value">{formatCurrency(customer?.lifetime_value)}</span>
-          <div className="stat-footer">
-            <span>Total historical billing volume</span>
-          </div>
-        </div>
-
-        <div className="card stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Churn Risk Rating</span>
-            <div className="stat-icon-wrapper">
-              <IconWarning size={16} />
-            </div>
-          </div>
-          <span className="stat-value" style={{ color: (customer?.risk_score || 0) > 60 ? '#fb7185' : '#60a5fa' }}>
-            {customer?.risk_score || 0} <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>/ 100</span>
+          <span className="stat-value" style={{ color: '#00FFF5' }}>
+            {formatCurrency(customer?.mrr)}
           </span>
           <div className="stat-footer">
-            <span>{(customer?.risk_score || 0) > 60 ? 'High Risk Account' : 'Normal Standing'}</span>
+            <span>Billed monthly</span>
           </div>
         </div>
 
         <div className="card stat-card">
           <div className="stat-header">
-            <span className="stat-label">Payment Success Rate</span>
+            <span className="stat-label">Payment Success</span>
             <div className="stat-icon-wrapper">
               <IconSuccess size={16} />
             </div>
           </div>
-          <span className="stat-value" style={{ color: '#34d399' }}>
-            {stats?.paymentSuccessRate || 95}%
+          <span className="stat-value">
+            {customer?.payment_success_rate || 95}%
           </span>
           <div className="stat-footer">
-            <span>Charge authorization rate</span>
+            <span>Historical reliability</span>
+          </div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Total Transactions</span>
+            <div className="stat-icon-wrapper">
+              <IconCard size={16} />
+            </div>
+          </div>
+          <span className="stat-value">
+            {stats?.totalPayments || payments?.length || 0}
+          </span>
+          <div className="stat-footer">
+            <span>{stats?.failedPayments || 0} declines logged</span>
+          </div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Active Dunning Cases</span>
+            <div className="stat-icon-wrapper">
+              <IconCases size={16} />
+            </div>
+          </div>
+          <span className="stat-value" style={{ color: recoveryCases?.length > 0 ? '#fb7185' : '#00FFF5' }}>
+            {recoveryCases?.length || 0}
+          </span>
+          <div className="stat-footer">
+            <span>{recoveryCases?.length > 0 ? 'Requires attention' : 'All clear'}</span>
           </div>
         </div>
       </div>
 
-      {/* Payment History & Recovery Cases */}
+      {/* Tables Row: Recent Payments and Recovery History */}
       <div className="grid-cols-2" style={{ marginBottom: '20px' }}>
-        {/* Recovery Cases */}
+        {/* Payment History */}
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">
-              <IconShield size={16} color="var(--text-secondary)" />
-              <span>Recovery Cases ({recoveryCases?.length || 0})</span>
+              <IconCard size={16} color="#cbd5e1" />
+              <span>Transaction History</span>
             </h3>
+            <span className="badge muted">{payments?.length || 0} charges</span>
           </div>
-          <div className="table-container">
+
+          <div className="table-container" style={{ maxHeight: '360px', overflowY: 'auto' }}>
             <table className="table">
               <thead>
                 <tr>
                   <th>Amount</th>
-                  <th>Reason</th>
                   <th>Status</th>
+                  <th>Method</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments?.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <span className="font-mono" style={{ fontWeight: 600, color: p.status === 'succeeded' ? '#ffffff' : '#fb7185' }}>
+                        {formatCurrency(p.amount)}
+                      </span>
+                    </td>
+                    <td>
+                      {p.status === 'succeeded' ? (
+                        <span className="badge success">Paid</span>
+                      ) : (
+                        <span className="badge danger">Failed</span>
+                      )}
+                    </td>
+                    <td style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                      {p.payment_method || 'Credit Card'}
+                    </td>
+                    <td style={{ fontSize: '11.5px', color: '#8e9ba9' }}>
+                      {new Date(p.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+
+                {(!payments || payments.length === 0) && (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: '#8e9ba9' }}>
+                      No payment records found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Recovery Cases History */}
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">
+              <IconCases size={16} color="#cbd5e1" />
+              <span>Recovery Interventions</span>
+            </h3>
+            <span className="badge primary">{recoveryCases?.length || 0} cases</span>
+          </div>
+
+          <div className="table-container" style={{ maxHeight: '360px', overflowY: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Action</th>
                   <th>Opened</th>
                 </tr>
               </thead>
@@ -198,64 +277,20 @@ export default function CustomerDetailPage({ params }) {
                         {formatCurrency(rc.amount_at_risk)}
                       </span>
                     </td>
-                    <td>
-                      <span className="badge muted" style={{ fontSize: '10.5px' }}>{rc.failure_reason}</span>
-                    </td>
                     <td>{getStatusBadge(rc.status)}</td>
-                    <td style={{ color: 'var(--text-dim)', fontSize: '11.5px' }}>
+                    <td style={{ fontSize: '11.5px', color: '#00FFF5' }}>
+                      {rc.recommended_action || 'Smart Dunning'}
+                    </td>
+                    <td style={{ fontSize: '11.5px', color: '#8e9ba9' }}>
                       {new Date(rc.opened_at).toLocaleDateString()}
                     </td>
                   </tr>
                 ))}
+
                 {(!recoveryCases || recoveryCases.length === 0) && (
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                      No active or past recovery cases for this subscriber.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Payment Transactions Log */}
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">
-              <IconCard size={16} color="var(--text-secondary)" />
-              <span>Payment History ({paymentHistory?.length || 0})</span>
-            </h3>
-          </div>
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Method</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paymentHistory?.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <span className="font-mono" style={{ fontWeight: 600 }}>{formatCurrency(p.amount)}</span>
-                    </td>
-                    <td>{getStatusBadge(p.status)}</td>
-                    <td>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{p.method || 'Credit Card'}</span>
-                    </td>
-                    <td style={{ color: 'var(--text-dim)', fontSize: '11.5px' }}>
-                      {new Date(p.created_at).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-                {(!paymentHistory || paymentHistory.length === 0) && (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                      No historical transactions recorded.
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: '#8e9ba9' }}>
+                      No past recovery incidents for this account.
                     </td>
                   </tr>
                 )}

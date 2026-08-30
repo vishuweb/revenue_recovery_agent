@@ -1,95 +1,41 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
-import { formatCurrency } from '../page';
+import { useEffect, useState } from 'react';
 import { useToast } from '../components/ToastContext';
 import {
   IconAudit,
-  IconSearch,
   IconRefresh,
-  IconCopy,
+  IconShield,
   IconZap,
-  IconSuccess,
-  IconWarning,
   IconClock,
-  IconShield
+  IconUser
 } from '../components/Icons';
 
 export default function AuditPage() {
   const toast = useToast();
-  const [data, setData] = useState(null);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [entityType, setEntityType] = useState('');
-  const [search, setSearch] = useState('');
-  const [expandedDetails, setExpandedDetails] = useState(new Set());
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
-  const toggleDetails = (id) => {
-    setExpandedDetails((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const fetchAudit = useCallback(async () => {
+  const fetchAudit = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/audit?entity_type=${entityType}`);
+      const res = await fetch('/api/audit?limit=60');
       if (res.ok) {
         const json = await res.json();
-        setData(json);
+        setEntries(json.entries || []);
       }
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load audit entries');
+      toast.error('Failed to load audit logs');
     } finally {
       setLoading(false);
     }
-  }, [entityType, toast]);
+  };
 
   useEffect(() => {
     fetchAudit();
-  }, [fetchAudit]);
-
-  const copyPayload = (e, details) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(JSON.stringify(details, null, 2));
-    toast.success('JSON payload copied to clipboard');
-  };
-
-  const getActorBadge = (actor) => {
-    if (actor === 'ai_engine' || actor === 'engine') {
-      return (
-        <span className="badge primary" style={{ fontSize: '10.5px' }}>
-          Engine
-        </span>
-      );
-    }
-    if (actor === 'system') {
-      return <span className="badge muted" style={{ fontSize: '10.5px' }}>System</span>;
-    }
-    return <span className="badge info" style={{ fontSize: '10.5px' }}>{actor}</span>;
-  };
-
-  const getEventIcon = (type = '') => {
-    if (type.includes('failed') || type.includes('stopped')) return <IconWarning size={14} color="#fb7185" />;
-    if (type.includes('recovered') || type.includes('success')) return <IconSuccess size={14} color="#34d399" />;
-    if (type.includes('approved') || type.includes('action')) return <IconZap size={14} color="#60a5fa" />;
-    return <IconAudit size={14} color="var(--text-dim)" />;
-  };
-
-  const filteredEntries = data?.entries?.filter((entry) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      entry.event_type?.toLowerCase().includes(q) ||
-      entry.description?.toLowerCase().includes(q) ||
-      entry.actor?.toLowerCase().includes(q) ||
-      entry.entity_id?.toLowerCase().includes(q)
-    );
-  });
+  }, []);
 
   return (
     <div className="animate-fade-in">
@@ -99,175 +45,132 @@ export default function AuditPage() {
           <div className="eyebrow"><span className="eyebrow-dot" />Compliance & Security</div>
           <h1 className="hero-title">Audit Trail</h1>
           <p className="hero-subtitle">
-            Immutable chronological transaction and pipeline event log for complete operational auditability.
+            Cryptographically timestamped, append-only ledger of all autonomous engine decisions and operator overrides.
           </p>
         </div>
-        <div>
-          <button className="btn btn-secondary btn-sm" onClick={fetchAudit}>
-            <IconRefresh size={14} />
-            <span>Refresh</span>
-          </button>
-        </div>
+        <button className="btn btn-secondary btn-sm" onClick={fetchAudit}>
+          <IconRefresh size={14} />
+          <span>Refresh Ledger</span>
+        </button>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="card" style={{ marginBottom: '18px', padding: '12px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-          <div className="search-wrapper" style={{ flex: 1, minWidth: '260px' }}>
-            <span className="search-icon-inside">
-              <IconSearch size={14} />
-            </span>
-            <input
-              type="text"
-              className="input search-input"
-              placeholder="Search audit descriptions, event types, actors, or entity IDs..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      {/* Main Audit Grid */}
+      <div className="grid-cols-3">
+        {/* Stream */}
+        <div className="card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-header">
+            <h3 className="card-title">
+              <IconAudit size={16} color="#00FFF5" />
+              <span>Immutable Ledger Stream</span>
+            </h3>
+            <span className="badge info">ACID Compliant</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <select
-              className="select"
-              style={{ width: '190px' }}
-              value={entityType}
-              onChange={(e) => setEntityType(e.target.value)}
-            >
-              <option value="">All Entity Types</option>
-              <option value="case">Recovery Cases</option>
-              <option value="payment">Payments</option>
-              <option value="customer">Customers</option>
-              <option value="action">Pipeline Actions</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Audit Timeline */}
-      <div className="card">
-        {loading ? (
-          <div className="skeleton" style={{ height: '400px' }} />
-        ) : (
-          <div className="timeline">
-            {filteredEntries?.map((entry) => (
-              <div key={entry.id} className="timeline-item">
-                <div className="timeline-indicator">
-                  <div className="timeline-dot">
-                    {getEventIcon(entry.event_type)}
-                  </div>
-                  <div className="timeline-line" />
-                </div>
-
-                <div className="timeline-content">
+          {loading ? (
+            <div className="skeleton" style={{ height: '360px' }} />
+          ) : (
+            <div className="timeline" style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '6px' }}>
+              {entries.map((item) => {
+                const isSelected = selectedEntry?.id === item.id;
+                return (
                   <div
-                    style={{
-                      background: 'var(--surface-color)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '8px',
-                      padding: '14px 16px',
-                      transition: 'border-color var(--transition-fast)'
-                    }}
+                    key={item.id}
+                    className="timeline-item"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setSelectedEntry(item)}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px', marginBottom: '6px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {entry.event_type}
-                        </span>
-                        {getActorBadge(entry.actor)}
+                    <div className="timeline-indicator">
+                      <div className={`timeline-dot ${isSelected ? 'active' : ''}`}>
+                        <IconShield size={12} />
                       </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {entry.details && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ padding: '2px 8px', fontSize: '11px' }}
-                            onClick={() => toggleDetails(entry.id)}
-                          >
-                            {expandedDetails.has(entry.id) ? 'Hide Payload' : 'View Payload'}
-                          </button>
-                        )}
-                        <span className="font-mono" style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
-                          {new Date(entry.created_at).toLocaleString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                          })}
-                        </span>
-                      </div>
+                      <div className="timeline-line" />
                     </div>
-
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5, marginBottom: '10px' }}>
-                      {entry.description}
-                    </p>
-
-                    {/* Expandable JSON payload */}
-                    {expandedDetails.has(entry.id) && entry.details && (
-                      <div style={{ position: 'relative', marginBottom: '10px' }}>
-                        <pre
-                          className="font-mono"
-                          style={{
-                            background: '#080a0f',
-                            border: '1px solid var(--glass-border)',
-                            borderRadius: '6px',
-                            padding: '10px 12px',
-                            maxHeight: '200px',
-                            overflow: 'auto',
-                            fontSize: '11.5px',
-                            color: '#93c5fd'
-                          }}
-                        >
-                          {JSON.stringify(entry.details, null, 2)}
-                        </pre>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          style={{ position: 'absolute', top: '6px', right: '6px', fontSize: '10.5px', padding: '2px 6px' }}
-                          onClick={(e) => copyPayload(e, entry.details)}
-                        >
-                          <IconCopy size={11} />
-                          <span>Copy</span>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Footer Entity Meta */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        fontSize: '11.5px',
-                        color: 'var(--text-dim)',
-                        background: 'rgba(0, 0, 0, 0.25)',
-                        padding: '6px 10px',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <div>
-                        Target:{' '}
-                        <span className="font-mono" style={{ color: '#93c5fd', fontWeight: 600 }}>
-                          {entry.entity_type} #{entry.entity_id?.substring(0, 8)}
-                        </span>
-                      </div>
-                      {entry.amount != null && (
-                        <div className="font-mono" style={{ color: '#fb7185', fontWeight: 600 }}>
-                          Amount: {formatCurrency(entry.amount)}
+                    <div className="timeline-content">
+                      <div
+                        style={{
+                          background: isSelected ? 'rgba(0, 173, 180, 0.15)' : 'var(--surface-elevated)',
+                          border: `1px solid ${isSelected ? '#00ADB4' : '#3B3E47'}`,
+                          borderRadius: '8px',
+                          padding: '12px 14px',
+                          transition: 'all var(--transition-fast)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span className="badge primary" style={{ fontSize: '11px' }}>
+                            {item.event_type}
+                          </span>
+                          <span className="font-mono" style={{ fontSize: '11px', color: '#5f6d7e' }}>
+                            {new Date(item.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
                         </div>
-                      )}
+                        <p style={{ fontSize: '12.5px', color: '#ffffff', marginTop: '4px' }}>{item.description}</p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '11px', color: '#8e9ba9' }}>
+                          <span>Actor: <strong style={{ color: '#cbd5e1' }}>{item.actor}</strong></span>
+                          <span className="font-mono" style={{ color: '#5f6d7e' }}>{item.entity_type}::{item.entity_id?.substring(0, 8)}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                );
+              })}
+
+              {entries.length === 0 && (
+                <div style={{ padding: '36px', textAlign: 'center', color: '#8e9ba9' }}>
+                  No audit entries recorded yet.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Selected Entry Inspector */}
+        <div className="card card-elevated" style={{ height: 'fit-content' }}>
+          <div className="card-header">
+            <h3 className="card-title">
+              <IconZap size={16} color="#00FFF5" />
+              <span>Event Details</span>
+            </h3>
+            {selectedEntry && <span className="badge primary">Inspect</span>}
+          </div>
+
+          {selectedEntry ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Event Type</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#00FFF5', marginTop: '2px' }}>{selectedEntry.event_type}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Description</div>
+                <div style={{ fontSize: '13px', color: '#ffffff', marginTop: '2px' }}>{selectedEntry.description}</div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Actor</div>
+                  <div style={{ fontSize: '12.5px', color: '#cbd5e1', marginTop: '2px' }}>{selectedEntry.actor}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Target Entity</div>
+                  <div style={{ fontSize: '12.5px', color: '#cbd5e1', marginTop: '2px' }}>{selectedEntry.entity_type}</div>
                 </div>
               </div>
-            ))}
 
-            {filteredEntries?.length === 0 && (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No audit events matching &ldquo;{search}&rdquo;.
+              <div>
+                <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase', marginBottom: '4px' }}>Payload Metadata</div>
+                <div style={{ background: '#12151d', border: '1px solid #3B3E47', borderRadius: '8px', padding: '12px', overflowX: 'auto' }}>
+                  <pre className="font-mono" style={{ fontSize: '11.5px', color: '#00FFF5', margin: 0 }}>
+                    {selectedEntry.payload ? JSON.stringify(JSON.parse(selectedEntry.payload), null, 2) : 'No payload'}
+                  </pre>
+                </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div style={{ padding: '48px 16px', textAlign: 'center', color: '#8e9ba9' }}>
+              Select an audit log entry on the left to inspect its complete immutable payload and actor signature.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

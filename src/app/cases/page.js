@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -15,8 +15,7 @@ import {
   IconZap,
   IconCases,
   IconWarning,
-  IconSuccess,
-  IconChevronRight
+  IconSuccess
 } from '../components/Icons';
 
 export default function CasesPage() {
@@ -145,7 +144,7 @@ export default function CasesPage() {
       <div className="card" style={{ marginBottom: '18px', padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
           {/* Status Tabs */}
-          <div style={{ display: 'flex', gap: '6px', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', gap: '6px', background: '#181d26', padding: '4px', borderRadius: '8px', border: '1px solid #3B3E47' }}>
             {filterTabs.map((tab) => {
               const isActive = status === tab.value;
               return (
@@ -156,10 +155,10 @@ export default function CasesPage() {
                     padding: '6px 12px',
                     borderRadius: '6px',
                     border: 'none',
-                    background: isActive ? 'var(--primary-accent)' : 'transparent',
-                    color: isActive ? '#fff' : 'var(--text-secondary)',
+                    background: isActive ? '#00ADB4' : 'transparent',
+                    color: isActive ? '#12151d' : '#8e9ba9',
                     fontSize: '12.5px',
-                    fontWeight: 600,
+                    fontWeight: 700,
                     cursor: 'pointer',
                     transition: 'all var(--transition-fast)'
                   }}
@@ -228,8 +227,8 @@ export default function CasesPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <CustomerAvatar name={c.name || c.customer_name} size={30} />
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name || c.customer_name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                          <div style={{ fontWeight: 600, color: '#ffffff' }}>{c.name || c.customer_name}</div>
+                          <div style={{ fontSize: '11px', color: '#8e9ba9' }}>
                             {c.company || c.customer_company || c.email}
                           </div>
                         </div>
@@ -254,7 +253,7 @@ export default function CasesPage() {
                         {c.recommended_action || 'Smart Dunning'}
                       </span>
                     </td>
-                    <td style={{ color: 'var(--text-dim)', fontSize: '11.5px' }}>
+                    <td style={{ color: '#8e9ba9', fontSize: '11.5px' }}>
                       {new Date(c.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </td>
                     <td style={{ textAlign: 'right' }}>
@@ -273,8 +272,8 @@ export default function CasesPage() {
                 {data?.cases?.length === 0 && (
                   <tr>
                     <td colSpan="9" style={{ textAlign: 'center', padding: '48px 24px' }}>
-                      <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>No active recovery cases</div>
-                      <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', maxWidth: '380px', margin: '4px auto 16px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 600, color: '#ffffff' }}>No active recovery cases</div>
+                      <p style={{ color: '#8e9ba9', fontSize: '13px', marginTop: '4px', maxWidth: '380px', margin: '4px auto 16px' }}>
                         All payments are up to date. You can simulate decline events in the sandbox.
                       </p>
                       <button className="btn btn-primary btn-sm" onClick={() => router.push('/simulator')}>

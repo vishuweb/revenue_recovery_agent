@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,15 +8,17 @@ import { useToast } from '../components/ToastContext';
 import {
   IconSearch,
   IconRefresh,
-  IconCustomers,
   IconUser,
-  IconRupee
+  IconWarning,
+  IconShield,
+  IconCoins,
+  IconChevronRight
 } from '../components/Icons';
 
 export default function CustomersPage() {
   const router = useRouter();
   const toast = useToast();
-  const [data, setData] = useState(null);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('mrr');
@@ -24,10 +26,14 @@ export default function CustomersPage() {
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/customers?search=${encodeURIComponent(search)}&sortBy=${sortBy}`);
+      const params = new URLSearchParams();
+      if (search) params.append('search', search);
+      if (sortBy) params.append('sortBy', sortBy);
+
+      const res = await fetch(`/api/customers?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
-        setData(json);
+        setCustomers(json.customers || []);
       }
     } catch (e) {
       console.error(e);
@@ -38,21 +44,31 @@ export default function CustomersPage() {
   }, [search, sortBy, toast]);
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
+    const timer = setTimeout(() => {
       fetchCustomers();
-    }, 250);
-    return () => clearTimeout(delayDebounceFn);
+    }, 200);
+    return () => clearTimeout(timer);
   }, [fetchCustomers]);
 
-  const getRiskScoreBar = (score = 0) => {
-    let color = '#10b981';
-    if (score > 40) color = '#f59e0b';
-    if (score > 70) color = '#f43f5e';
-
+  const getChurnRiskBadge = (score = 0) => {
+    if (score >= 0.7) {
+      return (
+        <span className="badge danger" style={{ fontSize: '11px' }}>
+          High Risk • {Math.round(score * 100)}%
+        </span>
+      );
+    }
+    if (score >= 0.35) {
+      return (
+        <span className="badge warning" style={{ fontSize: '11px' }}>
+          Medium • {Math.round(score * 100)}%
+        </span>
+      );
+    }
     return (
-      <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, score)}%`, height: '100%', background: color, borderRadius: 'inherit' }} />
-      </div>
+      <span className="badge success" style={{ fontSize: '11px' }}>
+        Healthy • {Math.round(score * 100)}%
+      </span>
     );
   };
 
@@ -61,52 +77,52 @@ export default function CustomersPage() {
       {/* Header */}
       <div className="dashboard-hero">
         <div>
-          <div className="eyebrow"><span className="eyebrow-dot" />Account Portfolio</div>
-          <h1 className="hero-title">Customer Directory</h1>
+          <div className="eyebrow"><span className="eyebrow-dot" />Subscriber Portfolio</div>
+          <h1 className="hero-title">Customer Accounts</h1>
           <p className="hero-subtitle">
-            Subscribers and accounts analyzed by the engine for retention health and lifetime value metrics.
+            Subscriber directory with churn risk analytics and payment reliability metrics.
           </p>
         </div>
-        <div>
-          <button className="btn btn-secondary btn-sm" onClick={fetchCustomers}>
-            <IconRefresh size={14} />
-            <span>Refresh</span>
-          </button>
-        </div>
+        <button className="btn btn-secondary btn-sm" onClick={fetchCustomers}>
+          <IconRefresh size={14} />
+          <span>Refresh</span>
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="card" style={{ marginBottom: '18px', padding: '12px 16px' }}>
+      <div className="card" style={{ marginBottom: '18px', padding: '14px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-          <div className="search-wrapper" style={{ flex: 1, minWidth: '260px' }}>
+          <div className="search-wrapper" style={{ flex: 1, maxWidth: '360px' }}>
             <span className="search-icon-inside">
               <IconSearch size={14} />
             </span>
             <input
               type="text"
               className="input search-input"
-              placeholder="Search by customer name, email address, or company..."
+              placeholder="Search by customer name, company or email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '12px', color: '#8e9ba9' }}>Sort by:</span>
             <select
               className="select"
-              style={{ width: '200px' }}
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
+              style={{ minWidth: '180px' }}
             >
-              <option value="mrr">Sort: MRR (Highest)</option>
-              <option value="lifetime_value">Sort: Lifetime Value</option>
-              <option value="risk_score">Sort: Churn Risk (Highest)</option>
+              <option value="mrr">Monthly Revenue (MRR)</option>
+              <option value="lifetime_value">Lifetime Value (LTV)</option>
+              <option value="churn_risk_score">Churn Risk Score</option>
+              <option value="name">Customer Name</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Customer Table */}
+      {/* Main Customers Table */}
       <div className="card">
         {loading ? (
           <div className="skeleton" style={{ height: '360px' }} />
@@ -115,76 +131,70 @@ export default function CustomersPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Customer Account</th>
-                  <th>Company</th>
+                  <th>Subscriber</th>
                   <th>Plan Tier</th>
-                  <th>Monthly (MRR)</th>
+                  <th>Monthly Revenue (MRR)</th>
                   <th>Lifetime Value</th>
-                  <th>Risk Score</th>
-                  <th>Active At Risk</th>
-                  <th>Recovery State</th>
+                  <th>Payment Health</th>
+                  <th>Churn Risk</th>
+                  <th>Tenure</th>
+                  <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {data?.customers?.map((c) => (
-                  <tr key={c.id} onClick={() => router.push(`/customers/${c.id}`)}>
+                {customers.map((cust) => (
+                  <tr key={cust.id} onClick={() => router.push(`/customers/${cust.id}`)}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <CustomerAvatar name={c.name} size={32} showStatus statusColor={c.risk_score > 60 ? 'var(--danger)' : 'var(--emerald)'} />
+                        <CustomerAvatar name={cust.name} size={32} />
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{c.email}</div>
+                          <div style={{ fontWeight: 600, color: '#ffffff' }}>{cust.name}</div>
+                          <div style={{ fontSize: '11px', color: '#8e9ba9' }}>{cust.company || cust.email}</div>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <span style={{ color: 'var(--text-secondary)' }}>
-                        {c.company || 'Direct'}
+                      <span className="badge primary" style={{ fontSize: '11px' }}>
+                        {cust.plan_name || 'Pro Plan'}
                       </span>
                     </td>
                     <td>
-                      <span className="badge primary" style={{ fontSize: '11px' }}>{c.plan_name || 'Standard'}</span>
-                    </td>
-                    <td>
-                      <span className="font-mono" style={{ fontWeight: 600, color: '#34d399' }}>
-                        {formatCurrency(c.mrr)}
+                      <span className="font-mono" style={{ fontWeight: 700, color: '#00FFF5' }}>
+                        {formatCurrency(cust.mrr)}
                       </span>
                     </td>
-                    <td className="font-mono" style={{ fontWeight: 600 }}>{formatCurrency(c.lifetime_value)}</td>
+                    <td>
+                      <span className="font-mono" style={{ color: '#ffffff' }}>
+                        {formatCurrency(cust.lifetime_value)}
+                      </span>
+                    </td>
                     <td style={{ width: '130px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600 }}>
-                          <span style={{ color: c.risk_score > 60 ? '#fb7185' : 'var(--text-primary)' }}>
-                            {Math.round(c.risk_score || 0)} / 100
-                          </span>
-                          <span style={{ color: 'var(--text-dim)' }}>risk</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="font-mono" style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                          {cust.payment_success_rate || 95}%
+                        </span>
+                        <div style={{ flex: 1, height: '5px', background: '#3B3E47', borderRadius: '9999px', overflow: 'hidden' }}>
+                          <div style={{ width: `${cust.payment_success_rate || 95}%`, height: '100%', background: '#00FFF5' }} />
                         </div>
-                        {getRiskScoreBar(c.risk_score)}
                       </div>
                     </td>
-                    <td>
-                      {c.active_at_risk > 0 ? (
-                        <span className="font-mono" style={{ fontWeight: 600, color: '#fb7185' }}>
-                          {formatCurrency(c.active_at_risk)}
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-dim)', fontSize: '12px' }}>₹0</span>
-                      )}
+                    <td>{getChurnRiskBadge(cust.churn_risk_score)}</td>
+                    <td style={{ color: '#8e9ba9', fontSize: '12px' }}>
+                      {cust.tenure_months || 12} mos
                     </td>
-                    <td>
-                      {c.active_cases_count > 0 ? (
-                        <span className="badge warning">{c.active_cases_count} Case Active</span>
-                      ) : (
-                        <span className="badge success">Healthy</span>
-                      )}
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => router.push(`/customers/${cust.id}`)}>
+                        <span>Profile</span>
+                        <IconChevronRight size={12} />
+                      </button>
                     </td>
                   </tr>
                 ))}
 
-                {(!data?.customers || data.customers.length === 0) && (
+                {customers.length === 0 && (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                      No customers matched &ldquo;{search}&rdquo;.
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: '#8e9ba9' }}>
+                      No customers matched your filter criteria.
                     </td>
                   </tr>
                 )}

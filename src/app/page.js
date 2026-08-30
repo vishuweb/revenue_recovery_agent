@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -12,7 +12,6 @@ import {
   IconWarning,
   IconSuccess,
   IconTrendUp,
-  IconTrendDown,
   IconRefresh,
   IconSimulator,
   IconCases,
@@ -39,6 +38,8 @@ export default function DashboardPage() {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [timeframe, setTimeframe] = useState('week');
+  const [segmentedView, setSegmentedView] = useState('telemetry');
   const [selectedCaseForAction, setSelectedCaseForAction] = useState(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
 
@@ -119,7 +120,7 @@ export default function DashboardPage() {
         <div>
           <div className="eyebrow">
             <span className="eyebrow-dot" />
-            Active Recovery Pipeline
+            Autonomous Revenue Recovery
           </div>
           <h1 className="hero-title">
             Revenue Recovery & <em>Orchestration</em>
@@ -128,7 +129,27 @@ export default function DashboardPage() {
             Autonomous retry orchestration, dunning automation, and personalized churn prevention workflows.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Segmented Switcher (like Expenses / Income in reference image) */}
+          <div className="segmented-pill">
+            <button
+              className={`segmented-pill-btn ${segmentedView === 'telemetry' ? 'active' : ''}`}
+              onClick={() => setSegmentedView('telemetry')}
+            >
+              Live Telemetry
+            </button>
+            <button
+              className={`segmented-pill-btn ${segmentedView === 'queue' ? 'active' : ''}`}
+              onClick={() => {
+                setSegmentedView('queue');
+                router.push('/cases');
+              }}
+            >
+              Priority Queue
+            </button>
+          </div>
+
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => {
@@ -139,261 +160,130 @@ export default function DashboardPage() {
             <IconRefresh size={14} />
             <span>Refresh</span>
           </button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => router.push('/analyze')}
-            style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', boxShadow: '0 4px 14px rgba(59,130,246,0.35)' }}
-          >
-            <IconZap size={14} />
-            <span>Run Your Business Data</span>
-          </button>
         </div>
       </div>
 
-      {/* Dynamic Engine Callout Banner */}
+      {/* Main Volume Display & Timeframe Filter Bar (matching reference layout) */}
       <div
-        className="card card-elevated"
+        className="card"
         style={{
-          marginBottom: '20px',
-          padding: '16px 20px',
-          background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, rgba(52, 211, 153, 0.08) 100%)',
-          border: '1px solid rgba(59, 130, 246, 0.35)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '14px'
+          marginBottom: '24px',
+          background: 'linear-gradient(180deg, #212832 0%, #1a202c 100%)',
+          border: '1px solid #3B3E47',
+          padding: '24px 28px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div className="stat-icon-wrapper" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', width: '38px', height: '38px' }}>
-            <IconZap size={20} />
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Interactive Judge Mode: Test Your Own Business Dataset
+            <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
+              Total Processed Volume
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Upload any CSV with transaction or dropoff records to run the real decision pipeline and observe personalized dunning strategies.
+            <div className="font-mono" style={{ fontSize: '36px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              {formatCurrency(data.totalRevenue)}
+            </div>
+          </div>
+
+          {/* Timeframe selector: Day | Week | Month | Year | [📅] */}
+          <div className="timeframe-bar">
+            {['day', 'week', 'month', 'year'].map((t) => (
+              <span
+                key={t}
+                className={`timeframe-item ${timeframe === t ? 'active' : ''}`}
+                onClick={() => setTimeframe(t)}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </span>
+            ))}
+            <div
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: '#28303d',
+                border: '1px solid #3B3E47',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#00FFF5',
+                cursor: 'pointer'
+              }}
+              title="Select custom date range"
+            >
+              <IconAnalytics size={14} />
             </div>
           </div>
         </div>
 
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => router.push('/analyze')}
-          style={{ padding: '6px 16px', fontWeight: 700 }}
-        >
-          <span>Launch Analysis Engine →</span>
-        </button>
+        {/* 30-Day Glowing Area Chart directly embedded in the hero card */}
+        <div style={{ height: '240px', width: '100%', marginTop: '20px' }}>
+          <RevenueChart data={data.recoveryTrend} />
+        </div>
       </div>
 
-      {/* Primary Financial Metric Cards */}
-      <div className="grid-cols-4" style={{ marginBottom: '20px' }}>
-        <div className="card stat-card">
+      {/* Dual-Contrast Category / Metric Cards (Featured Teal + Slate Graphite) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Performance Metrics</h3>
+        <Link href="/cases" style={{ fontSize: '12px', color: '#00FFF5', textDecoration: 'none', fontWeight: 600 }}>
+          View All Analytics →
+        </Link>
+      </div>
+
+      <div className="grid-cols-4" style={{ marginBottom: '24px' }}>
+        {/* Card 1: FEATURED VIBRANT TEAL CARD (matches the active "Taxi" card from image) */}
+        <div className="card-featured-teal stat-card">
           <div className="stat-header">
-            <span className="stat-label">Total Volume</span>
+            <span className="stat-label">Net Recovered</span>
             <div className="stat-icon-wrapper">
-              <IconRupee size={16} />
+              <IconSuccess size={18} />
             </div>
           </div>
-          <span className="stat-value">{formatCurrency(data.totalRevenue)}</span>
+          <span className="stat-value">{formatCurrency(data.revenueRecovered)}</span>
           <div className="stat-footer">
-            <span className="stat-trend-up">
-              <IconTrendUp size={14} />
-              <span>98.2%</span>
-            </span>
-            <span>settlement rate</span>
+            <span style={{ fontWeight: 700 }}>Rescued from Churn</span>
           </div>
         </div>
 
+        {/* Card 2: Slate Card with Danger Accent */}
         <div className="card stat-card">
           <div className="stat-header">
             <span className="stat-label">Revenue At Risk</span>
-            <div className="stat-icon-wrapper" style={{ color: 'var(--danger)', background: 'var(--danger-soft)' }}>
+            <div className="stat-icon-wrapper" style={{ color: '#fb7185', background: 'rgba(244, 63, 94, 0.12)', border: '1px solid rgba(244, 63, 94, 0.28)' }}>
               <IconWarning size={16} />
             </div>
           </div>
           <span className="stat-value" style={{ color: '#fb7185' }}>{formatCurrency(data.revenueAtRisk)}</span>
           <div className="stat-footer">
-            <span className="badge danger" style={{ fontSize: '10.5px' }}>{data.activeCases || 0} active</span>
-            <span>pipeline cases</span>
+            <span className="badge danger" style={{ fontSize: '10.5px' }}>{data.activeCases || 0} active cases</span>
           </div>
         </div>
 
-        <div className="card stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Revenue Recovered</span>
-            <div className="stat-icon-wrapper" style={{ color: 'var(--emerald)', background: 'var(--emerald-soft)' }}>
-              <IconSuccess size={16} />
-            </div>
-          </div>
-          <span className="stat-value" style={{ color: '#34d399' }}>{formatCurrency(data.revenueRecovered)}</span>
-          <div className="stat-footer">
-            <span className="stat-trend-up">
-              <IconTrendUp size={14} />
-              <span>Saved</span>
-            </span>
-            <span>from churn</span>
-          </div>
-        </div>
-
+        {/* Card 3: Slate Card with Conversion Accent */}
         <div className="card stat-card">
           <div className="stat-header">
             <span className="stat-label">Recovery Conversion</span>
-            <div className="stat-icon-wrapper" style={{ color: '#60a5fa', background: 'var(--primary-soft)' }}>
+            <div className="stat-icon-wrapper">
               <IconAnalytics size={16} />
             </div>
           </div>
-          <span className="stat-value" style={{ color: '#93c5fd' }}>{data.recoveryRate || 0}%</span>
+          <span className="stat-value" style={{ color: '#00FFF5' }}>{data.recoveryRate || 0}%</span>
           <div className="stat-footer">
             <span className="stat-trend-up">
               <IconTrendUp size={14} />
-              <span>+{((data.strategyComparison?.incrementalValue || 0) > 0 ? (data.strategyComparison.incrementalValue / Math.max(1, data.strategyComparison.naiveEstimate) * 100).toFixed(0) : 28)}%</span>
+              <span>+28%</span>
             </span>
-            <span>vs naive baseline</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Strategy Comparison & Revenue Attribution Row */}
-      <div className="grid-cols-2" style={{ marginBottom: '20px' }}>
-        {/* Strategy Comparison Card */}
-        <div className="card card-elevated">
-          <div className="card-header" style={{ marginBottom: '12px' }}>
-            <div>
-              <h3 className="card-title" style={{ fontSize: '14px' }}>
-                <IconZap size={16} color="#60a5fa" />
-                <span>Strategy Comparison: Naive Retry vs Adaptive NEV</span>
-              </h3>
-              <p className="card-subtitle">Estimated incremental value over brute-force retry policy</p>
-            </div>
-            {data.noActionCount > 0 && (
-              <span className="badge warning" style={{ fontSize: '10.5px' }}>
-                {data.noActionCount} "Do Nothing" Cases
-              </span>
-            )}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px', background: 'var(--bg-subtle)', padding: '14px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-            <div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Naive Retry Estimate</div>
-              <div className="font-mono" style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '4px' }}>
-                {formatCurrency(data.strategyComparison?.naiveEstimate || 0)}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>Brute-force retry</div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Adaptive Recovery</div>
-              <div className="font-mono" style={{ fontSize: '16px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-                {formatCurrency(data.strategyComparison?.adaptiveActual || data.revenueRecovered || 0)}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>NEV optimized</div>
-            </div>
-
-            <div style={{ background: 'rgba(52, 211, 153, 0.1)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(52, 211, 153, 0.25)' }}>
-              <div style={{ fontSize: '11px', color: '#34d399', fontWeight: 700 }}>Incremental Uplift</div>
-              <div className="font-mono" style={{ fontSize: '17px', fontWeight: 800, color: '#34d399', marginTop: '2px' }}>
-                + {formatCurrency(Math.max(0, data.strategyComparison?.incrementalValue || 0))}
-              </div>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>Net value added</div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '10px', fontSize: '10.5px', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-            * {data.strategyComparison?.disclaimer || 'Estimated comparison based on historical category probabilities.'}
+            <span>vs baseline dunning</span>
           </div>
         </div>
 
-        {/* Revenue Attribution Breakdown Card */}
-        <div className="card card-elevated">
-          <div className="card-header" style={{ marginBottom: '12px' }}>
-            <div>
-              <h3 className="card-title" style={{ fontSize: '14px' }}>
-                <IconShield size={16} color="#34d399" />
-                <span>Revenue Attribution Breakdown</span>
-              </h3>
-              <p className="card-subtitle">Causal classification of recovered revenue</p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-              <div style={{ fontSize: '10.5px', color: '#34d399', fontWeight: 700, textTransform: 'uppercase' }}>Direct Recovery</div>
-              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
-                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'recovered')?.recovered || 0)}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                {data.attributionBreakdown?.find(a => a.attribution_type === 'recovered')?.count || 0} cases (Retry)
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-              <div style={{ fontSize: '10.5px', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase' }}>Assisted Recovery</div>
-              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
-                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'assisted')?.recovered || 0)}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                {data.attributionBreakdown?.find(a => a.attribution_type === 'assisted')?.count || 0} cases (Outreach)
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-              <div style={{ fontSize: '10.5px', color: '#fbbf24', fontWeight: 700, textTransform: 'uppercase' }}>Organic Self-Cure</div>
-              <div className="font-mono" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
-                {formatCurrency(data.attributionBreakdown?.find(a => a.attribution_type === 'organic')?.recovered || 0)}
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                {data.attributionBreakdown?.find(a => a.attribution_type === 'organic')?.count || 0} cases (Self-cure)
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '10px', fontSize: '10.5px', color: 'var(--text-dim)' }}>
-            Labeled as <strong>Attributed Recovery</strong>. Organic self-cures are separated to avoid over-attribution.
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Metrics Row */}
-      <div className="grid-cols-3" style={{ marginBottom: '20px' }}>
+        {/* Card 4: Slate Card with Net ROI */}
         <div className="card stat-card">
           <div className="stat-header">
-            <span className="stat-label">Active Recovery Queue</span>
-            <div className="stat-icon-wrapper">
-              <IconCases size={16} />
-            </div>
-          </div>
-          <span className="stat-value">{data.activeCases}</span>
-          <div className="stat-footer">
-            <span>{data.customersAtRisk || 0} accounts in retry cycle</span>
-          </div>
-        </div>
-
-        <div className="card stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Concessions & Incentives</span>
-            <div className="stat-icon-wrapper">
-              <IconDiscount size={16} />
-            </div>
-          </div>
-          <span className="stat-value" style={{ color: '#fbbf24' }}>
-            {formatCurrency(data.interventionCost || 0)}
-          </span>
-          <div className="stat-footer">
-            <span>Discount courtesy allocated</span>
-          </div>
-        </div>
-
-        <div className="card stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Net Recovery ROI</span>
+            <span className="stat-label">Net Agent ROI</span>
             <div className="stat-icon-wrapper">
               <IconShield size={16} />
             </div>
           </div>
-          <span className="stat-value" style={{ color: '#34d399' }}>
+          <span className="stat-value" style={{ color: '#00FFF5' }}>
             {formatCurrency((data.revenueRecovered || 0) - (data.interventionCost || 0))}
           </span>
           <div className="stat-footer">
@@ -401,35 +291,18 @@ export default function DashboardPage() {
               <IconTrendUp size={14} />
               <span>Positive ROI</span>
             </span>
-            <span>net recovered value</span>
+            <span>net profit</span>
           </div>
-        </div>
-      </div>
-
-      {/* Main Recovery Trend Chart */}
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <div className="card-header">
-          <div>
-            <h3 className="card-title">
-              <IconAnalytics size={16} color="#60a5fa" />
-              <span>30-Day Recovery Telemetry</span>
-            </h3>
-            <p className="card-subtitle">Daily comparison of Volume At Risk vs Settled Recoveries</p>
-          </div>
-          <span className="badge primary">Live Stream</span>
-        </div>
-        <div style={{ height: '260px', width: '100%' }}>
-          <RevenueChart data={data.recoveryTrend} />
         </div>
       </div>
 
       {/* Analytics Breakdown Grid */}
-      <div className="grid-cols-2" style={{ marginBottom: '20px' }}>
+      <div className="grid-cols-2" style={{ marginBottom: '24px' }}>
         <div className="card">
           <div className="card-header">
             <div>
               <h3 className="card-title">
-                <IconWarning size={16} color="var(--warning)" />
+                <IconWarning size={16} color="#f59e0b" />
                 <span>Decline Root Causes</span>
               </h3>
               <p className="card-subtitle">Gateway error categorization and retry feasibility</p>
@@ -444,7 +317,7 @@ export default function DashboardPage() {
           <div className="card-header">
             <div>
               <h3 className="card-title">
-                <IconCases size={16} color="#60a5fa" />
+                <IconCases size={16} color="#00FFF5" />
                 <span>Pipeline Stage Distribution</span>
               </h3>
               <p className="card-subtitle">State lifecycle of active and settled dunning cases</p>
@@ -461,7 +334,7 @@ export default function DashboardPage() {
         <div className="card-header">
           <div>
             <h3 className="card-title">
-              <IconZap size={16} color="#60a5fa" />
+              <IconZap size={16} color="#00FFF5" />
               <span>Priority Recovery Queue</span>
             </h3>
             <p className="card-subtitle">Active payment issues ranked by probability score and LTV impact</p>
@@ -490,14 +363,14 @@ export default function DashboardPage() {
                 <tr key={c.id} onClick={() => router.push(`/cases/${c.id}`)}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <CustomerAvatar name={c.customer_name} size={30} showStatus statusColor={c.status === 'recovered' ? 'var(--emerald)' : 'var(--warning)'} />
+                      <CustomerAvatar name={c.customer_name} size={30} showStatus statusColor={c.status === 'recovered' ? '#00FFF5' : '#f59e0b'} />
                       <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.customer_name}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ fontWeight: 600, color: '#ffffff' }}>{c.customer_name}</div>
+                        <div style={{ fontSize: '11px', color: '#8e9ba9', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span className="font-mono">{c.id.substring(0, 8)}</span>
                           <button
                             onClick={(e) => handleCopyId(e, c.id)}
-                            style={{ background: 'transparent', border: 0, color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            style={{ background: 'transparent', border: 0, color: '#8e9ba9', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             title="Copy Case ID"
                           >
                             <IconCopy size={11} />
@@ -516,11 +389,11 @@ export default function DashboardPage() {
                   </td>
                   <td>{getStatusBadge(c.status)}</td>
                   <td>
-                    <span className="badge muted" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    <span className="badge muted" style={{ fontSize: '11px', color: '#cbd5e1' }}>
                       {c.recommended_action || 'Smart Dunning'}
                     </span>
                   </td>
-                  <td style={{ color: 'var(--text-dim)', fontSize: '11.5px' }}>
+                  <td style={{ color: '#8e9ba9', fontSize: '11.5px' }}>
                     {new Date(c.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td style={{ textAlign: 'right' }}>
@@ -537,8 +410,8 @@ export default function DashboardPage() {
               ))}
               {(!data.recentCases || data.recentCases.length === 0) && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                    No recovery cases logged yet. Visit the <Link href="/simulator" style={{ color: '#60a5fa' }}>Sandbox</Link> to inject test scenarios.
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#8e9ba9' }}>
+                    No recovery cases logged yet. Visit the <Link href="/simulator" style={{ color: '#00FFF5' }}>Sandbox</Link> to inject test scenarios.
                   </td>
                 </tr>
               )}
