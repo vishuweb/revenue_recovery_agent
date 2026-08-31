@@ -286,7 +286,7 @@ export async function executeRecoveryAction(actionId) {
         db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('completed', 'success', JSON.stringify(result), action.id);
         
-        processRecoveryOutcome(caseData.id, result);
+        await processRecoveryOutcome(caseData.id, result);
         logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success', paymentId: result.providerPaymentId || null });
       } else {
         db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
@@ -425,7 +425,7 @@ function scheduleNextAction(caseId, customer) {
 /**
  * Process a successful recovery outcome — with attribution.
  */
-export function processRecoveryOutcome(caseId, paymentResult) {
+export async function processRecoveryOutcome(caseId, paymentResult) {
   const db = getDb();
   
   const caseData = db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { resetDatabase } from '@/lib/db/database'
 import { generateSimulationData } from '@/lib/simulation/generator'
 import { triggerScenario } from '@/lib/simulation/scenarios'
-import { executeRecoveryAction, processRecoveryOutcome, processFailedPayment, processEvent } from '@/lib/engine/orchestrator'
+import { executeRecoveryAction, processRecoveryOutcome, processFailedPayment, processEvent, processPendingAutomations } from '@/lib/engine/orchestrator'
 import { getDb } from '@/lib/db/database'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -90,6 +90,18 @@ export async function POST(request) {
         cases.push(c)
       }
       return NextResponse.json({ success: true, cases })
+    }
+
+    // Execute Pipeline Sweep — triggered by "Execute Pipeline Sweep" button in the simulator UI.
+    // Runs processPendingAutomations: executes all scheduled pending recovery actions,
+    // and opens new recovery cases for any unhandled failed payments.
+    if (command === 'run_cron') {
+      const results = await processPendingAutomations()
+      return NextResponse.json({
+        success: true,
+        message: `Pipeline sweep complete: ${results.actionsProcessed} action(s) executed, ${results.paymentsProcessed} unhandled payment(s) queued`,
+        results
+      })
     }
 
     return NextResponse.json({ error: 'Unknown command' }, { status: 400 })

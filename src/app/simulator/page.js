@@ -147,7 +147,7 @@ export default function SimulatorPage() {
       rzp.on('payment.failed', async function (response) {
         toast.error(`Razorpay Checkout Failed: ${response.error?.description || 'Declined'}`);
         try {
-          const webhookRes = await fetch('/api/webhooks', {
+          const webhookRes = await fetch('/api/webhooks/simulate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -210,7 +210,7 @@ export default function SimulatorPage() {
         }
       };
 
-      const res = await fetch('/api/webhooks', {
+      const res = await fetch('/api/webhooks/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
