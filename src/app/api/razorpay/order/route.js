@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import { getRazorpayProvider } from '@/lib/providers/razorpay';
-import { getDb, auditLog } from '@/lib/db/database';
+import { NextResponse } from 'next/server.js';
+import { getRazorpayProvider } from '../../../../lib/providers/razorpay.js';
+import { getDb, auditLog } from '../../../../lib/db/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request) {

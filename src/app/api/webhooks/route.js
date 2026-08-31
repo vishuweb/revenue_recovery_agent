@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-import { getDb, auditLog } from '@/lib/db/database';
-import { processFailedPayment, processRecoveryOutcome } from '@/lib/engine/orchestrator';
-import { RazorpayProvider } from '@/lib/providers/razorpay';
+import { NextResponse } from 'next/server.js';
+import { getDb, auditLog } from '../../../lib/db/database.js';
+import { processFailedPayment, processRecoveryOutcome } from '../../../lib/engine/orchestrator.js';
+import { RazorpayProvider } from '../../../lib/providers/razorpay.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request) {
