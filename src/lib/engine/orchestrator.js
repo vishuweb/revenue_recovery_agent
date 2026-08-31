@@ -8,7 +8,7 @@ import { checkGuardrails, POLICY } from './guardrails.js';
 import { deterministicFallback } from './fallback.js';
 import { classifyAttribution } from './attribution.js';
 import { logDecision } from './observability.js';
-import { getSimulationProvider } from '../providers/simulation.js';
+import { getPaymentProvider, getSimulationProvider } from '../providers/provider.js';
 
 /**
  * Process a failed payment — idempotent.
@@ -272,7 +272,7 @@ export async function executeRecoveryAction(actionId) {
   db.prepare('UPDATE recovery_actions SET status = ?, executed_at = ? WHERE id = ?')
     .run('executing', new Date().toISOString(), action.id);
 
-  const provider = getSimulationProvider();
+  const provider = getPaymentProvider();
   
   let result;
   let executionError = null;
@@ -280,14 +280,14 @@ export async function executeRecoveryAction(actionId) {
   try {
     if (action.action_type === 'retry') {
       const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(caseData.payment_id);
-      result = await provider.retryPayment(payment.id, payment.amount, payment.customer_id, caseData);
+      result = await provider.retryPayment(payment?.id || caseData.payment_id, payment?.amount || caseData.amount_at_risk, caseData.customer_id, caseData);
       
       if (result.success) {
         db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('completed', 'success', JSON.stringify(result), action.id);
         
         processRecoveryOutcome(caseData.id, result);
-        logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success' });
+        logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success', paymentId: result.providerPaymentId || null });
       } else {
         db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('failed', 'failed', JSON.stringify(result), action.id);
@@ -301,10 +301,25 @@ export async function executeRecoveryAction(actionId) {
         scheduleNextAction(caseData.id, customer);
       }
     } else if (action.action_type === 'payment_link') {
-      result = await provider.createPaymentLink(caseData.customer_id, caseData.amount_at_risk, `Recovery for case ${caseData.id}`);
+      const customerRecord = customer || db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
+      result = await provider.createPaymentLink(
+        caseData.customer_id,
+        caseData.amount_at_risk,
+        `Recovery for case ${caseData.id}`,
+        {
+          caseId: caseData.id,
+          customerName: customerRecord?.name,
+          customerEmail: customerRecord?.email,
+          customerPhone: customerRecord?.phone,
+          notes: {
+            case_id: caseData.id,
+            customer_id: caseData.customer_id
+          }
+        }
+      );
       db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
-      logDecision(caseData.id, 'executed', { actionType: 'payment_link', result: 'success' });
+      logDecision(caseData.id, 'executed', { actionType: 'payment_link', result: 'success', paymentUrl: result.url || null });
     } else if (action.action_type === 'no_action') {
       // No_action is explicitly "do nothing" — mark as completed successfully
       result = { msg: 'No action taken — optimal financial decision', success: true };

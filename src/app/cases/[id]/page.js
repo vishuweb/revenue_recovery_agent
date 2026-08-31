@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -53,6 +53,120 @@ export default function CaseDetailPage({ params }) {
   useEffect(() => {
     fetchCase();
   }, [id]);
+
+  const handleRazorpayCheckout = async () => {
+    setActionLoading(true);
+    toast.info('Initializing Razorpay Checkout session...');
+    try {
+      const res = await fetch('/api/razorpay/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: c.amount_at_risk,
+          customerId: customer?.id,
+          caseId: c.id,
+          description: `Recovery settlement for Case ${c.id.substring(0, 8)}`
+        })
+      });
+
+      const orderData = await res.json();
+      if (!res.ok) {
+        toast.error(orderData.error || 'Failed to initialize order');
+        return;
+      }
+
+      const loadScript = (src) => {
+        return new Promise((resolve) => {
+          if (document.querySelector(`script[src="${src}"]`)) {
+            resolve(true);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+      };
+
+      const scriptLoaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+      if (!scriptLoaded || typeof window.Razorpay === 'undefined') {
+        toast.warning('Razorpay Checkout SDK not reachable. Running simulated payment...');
+        // Fallback simulate verification
+        await fetch('/api/razorpay/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.orderId,
+            razorpay_payment_id: `pay_sim_${Date.now()}`,
+            razorpay_signature: 'sim_sig',
+            caseId: c.id,
+            customerId: customer?.id,
+            amount: c.amount_at_risk
+          })
+        });
+        toast.success('Simulated Razorpay recovery settled!');
+        await fetchCase();
+        return;
+      }
+
+      const options = {
+        key: orderData.keyId || 'rzp_test_mock',
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'Revenue Recovery Agent',
+        description: `Case #${c.id.substring(0, 8)} Settlement`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: customer?.name,
+          email: customer?.email,
+          contact: customer?.phone
+        },
+        theme: {
+          color: '#00ADB4'
+        },
+        handler: async function (response) {
+          toast.info('Verifying Razorpay payment signature...');
+          const verifyRes = await fetch('/api/razorpay/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              caseId: c.id,
+              customerId: customer?.id,
+              amount: c.amount_at_risk
+            })
+          });
+
+          if (verifyRes.ok) {
+            toast.success('Razorpay payment verified! Case marked as Recovered.');
+            await fetchCase();
+          } else {
+            const err = await verifyRes.json();
+            toast.error(err.error || 'Signature verification failed');
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            toast.info('Razorpay checkout modal closed');
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        toast.error(`Payment failed: ${response.error?.description || 'Declined'}`);
+      });
+      rzp.open();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to launch Razorpay checkout');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleAction = async (actionStr) => {
     setActionLoading(true);
@@ -323,6 +437,18 @@ export default function CaseDetailPage({ params }) {
               {(c.status === 'open' || c.status === 'in_progress') && (
                 <button
                   className="btn btn-secondary btn-sm"
+                  onClick={handleRazorpayCheckout}
+                  disabled={actionLoading}
+                  style={{ border: '1px solid #00ADB4', color: '#00FFF5' }}
+                >
+                  <IconCard size={14} />
+                  <span>Razorpay Standard Checkout</span>
+                </button>
+              )}
+
+              {(c.status === 'open' || c.status === 'in_progress') && (
+                <button
+                  className="btn btn-secondary btn-sm"
                   onClick={() => handleAction('escalate')}
                   disabled={actionLoading}
                 >
@@ -451,6 +577,30 @@ export default function CaseDetailPage({ params }) {
                           Outcome: {a.result}
                         </div>
                       )}
+
+                      {(() => {
+                        try {
+                          const details = a.result_details ? JSON.parse(a.result_details) : null;
+                          if (details?.url) {
+                            return (
+                              <div style={{ marginTop: '8px' }}>
+                                <a
+                                  href={details.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#00FFF5' }}
+                                >
+                                  <span>Open Razorpay Payment Link ↗</span>
+                                </a>
+                              </div>
+                            );
+                          }
+                        } catch {
+                          return null;
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 </div>

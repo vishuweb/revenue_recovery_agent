@@ -1,4 +1,4 @@
-import { PaymentProvider } from './provider.js';
+import { PaymentProvider } from './base.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const FAILURE_REASONS = [
@@ -158,6 +158,8 @@ export class SimulationProvider extends PaymentProvider {
     };
   }
 }
+
+export const MockPaymentProvider = SimulationProvider;
 
 let instance = null;
 export function getSimulationProvider() {
