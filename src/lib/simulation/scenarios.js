@@ -2,7 +2,7 @@ import { getDb, auditLog } from '../db/database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { processFailedPayment, processEvent } from '../engine/orchestrator.js';
 
-export function triggerScenario(scenarioType) {
+export async function triggerScenario(scenarioType) {
   const db = getDb();
   let type = scenarioType;
   
@@ -11,7 +11,7 @@ export function triggerScenario(scenarioType) {
 
   if (type === 'near_expiry_inventory') {
     // Select top cohort of customers ranked by composite propensity (affinity + payment history + value fit)
-    const cohort = db.prepare(`
+    const cohort = await db.prepare(`
       SELECT *, 
         (discount_affinity * 40 + 
          (CASE WHEN total_payments > 0 THEN (successful_payments * 1.0 / total_payments) * 30 ELSE 15 END) + 
@@ -41,13 +41,13 @@ export function triggerScenario(scenarioType) {
         campaign_name: 'Clearance Countdown Flash'
       };
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO events (
           id, event_type, customer_id, source, amount, metadata, processed, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(eventId, type, targetCustomer.id, 'inventory_monitor', amount, JSON.stringify(metadata), 0, new Date().toISOString());
 
-      const result = processEvent(eventId);
+      const result = await processEvent(eventId);
       cases.push(result);
     }
 
@@ -55,20 +55,20 @@ export function triggerScenario(scenarioType) {
   }
 
   if (['checkout_abandoned', 'checkout_timeout'].includes(type)) {
-    const targetCustomer = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
+    const targetCustomer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
     if (!targetCustomer) return { error: 'No customers found' };
     
     const eventId = uuidv4();
     const amount = targetCustomer.avg_order_value || 10000;
     const metadata = { items: ['abandoned_cart_item'], cart_id: `cart_${uuidv4().substring(0, 8)}` };
     
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO events (
         id, event_type, customer_id, source, amount, metadata, processed, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(eventId, type, targetCustomer.id, 'storefront', amount, JSON.stringify(metadata), 0, new Date().toISOString());
     
-    const result = processEvent(eventId);
+    const result = await processEvent(eventId);
     return { scenario: type, cases: [result] };
   }
 
@@ -79,16 +79,18 @@ export function triggerScenario(scenarioType) {
   let isGatewayOutage = false;
 
   if (type === 'temporary_failure') {
-    targetCustomer = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
+    targetCustomer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
   } else if (type === 'chronic_failure') {
-    targetCustomer = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
+    targetCustomer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
     failureReason = 'card_declined';
-    db.prepare('UPDATE customers SET failed_payments = failed_payments + 5 WHERE id = ?').run(targetCustomer.id);
+    if (targetCustomer) {
+      await db.prepare('UPDATE customers SET failed_payments = failed_payments + 5 WHERE id = ?').run(targetCustomer.id);
+    }
   } else if (type === 'high_value_failure') {
-    targetCustomer = db.prepare("SELECT * FROM customers WHERE plan = 'enterprise' ORDER BY RANDOM() LIMIT 1").get();
+    targetCustomer = await db.prepare("SELECT * FROM customers WHERE plan = 'enterprise' ORDER BY RANDOM() LIMIT 1").get();
   } else if (type === 'expired_card') {
-    targetCustomer = db.prepare("SELECT * FROM customers WHERE payment_method = 'card' ORDER BY RANDOM() LIMIT 1").get();
-    if (!targetCustomer) targetCustomer = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get(); // Fallback
+    targetCustomer = await db.prepare("SELECT * FROM customers WHERE payment_method = 'card' ORDER BY RANDOM() LIMIT 1").get();
+    if (!targetCustomer) targetCustomer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get(); // Fallback
     failureReason = 'card_expired';
   } else if (type === 'gateway_outage') {
     isGatewayOutage = true;
@@ -96,42 +98,46 @@ export function triggerScenario(scenarioType) {
     failureSource = 'razorpay';
   }
 
-  const createFailureForCustomer = (customer, reason, source) => {
-    const sub = db.prepare('SELECT * FROM subscriptions WHERE customer_id = ? LIMIT 1').get(customer.id);
+  const createFailureForCustomer = async (customer, reason, source) => {
+    const sub = await db.prepare('SELECT * FROM subscriptions WHERE customer_id = ? LIMIT 1').get(customer.id);
     const amount = customer.mrr;
 
     const invId = uuidv4();
     const date = new Date().toISOString();
     
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO invoices (
         id, customer_id, subscription_id, amount, currency, status, due_date, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(invId, customer.id, sub ? sub.id : null, amount, 'INR', 'unpaid', date, date);
 
     const payId = uuidv4();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO payments (
         id, customer_id, subscription_id, invoice_id, amount, currency, status, 
         method, failure_reason, failure_source, provider_payment_id, attempted_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(payId, customer.id, sub ? sub.id : null, invId, amount, 'INR', 'failed', customer.payment_method, reason, source, `raz_${uuidv4()}`, date, date);
 
-    db.prepare('UPDATE customers SET failed_payments = failed_payments + 1 WHERE id = ?').run(customer.id);
+    await db.prepare('UPDATE customers SET failed_payments = failed_payments + 1 WHERE id = ?').run(customer.id);
     if (sub) {
-      db.prepare("UPDATE subscriptions SET status = 'past_due' WHERE id = ?").run(sub.id);
+      await db.prepare("UPDATE subscriptions SET status = 'past_due' WHERE id = ?").run(sub.id);
     }
 
-    return processFailedPayment(payId);
+    return await processFailedPayment(payId);
   };
 
   if (isGatewayOutage) {
-    const customers = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 3').all();
-    const cases = customers.map(c => createFailureForCustomer(c, failureReason, failureSource));
+    const customers = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 3').all();
+    const cases = [];
+    for (const c of customers) {
+      cases.push(await createFailureForCustomer(c, failureReason, failureSource));
+    }
     return { scenario: type, cases };
   } else {
-    if (!targetCustomer) targetCustomer = db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
-    const result = createFailureForCustomer(targetCustomer, failureReason, failureSource);
+    if (!targetCustomer) targetCustomer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get();
+    if (!targetCustomer) return { error: 'No customers available for scenario' };
+    const result = await createFailureForCustomer(targetCustomer, failureReason, failureSource);
     return { scenario: type, cases: [result] };
   }
 }

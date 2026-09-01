@@ -56,9 +56,9 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     funnel.revenueRiskEvents++;
 
     // 1. Ensure Customer exists or create/update customer record
-    let customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(row.customer_id);
+    let customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(row.customer_id);
     if (!customer) {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO customers (
           id, name, email, company, plan, mrr, lifetime_value, payment_method,
           risk_score, total_payments, successful_payments, failed_payments,
@@ -85,7 +85,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
         now.toISOString(),
         now.toISOString()
       );
-      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(row.customer_id);
+      customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(row.customer_id);
     }
 
     // 2. Classify Event & Decline Reason
@@ -144,10 +144,10 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     const interventionCost = decision.intervention_cost || 0;
     totalInterventionCost += interventionCost;
 
-    // 6. Record to SQLite Database
+    // 6. Record to Database
     const paymentDate = caseData.opened_at;
     try {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO payments (
           id, customer_id, amount, currency, status, method, failure_reason, failure_source, provider_payment_id, attempted_at, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -164,7 +164,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     const expectedRecovery = selectedCandidate ? (selectedCandidate.expectedRecovery || 0) : 0;
     const nev = selectedCandidate ? (selectedCandidate.nev || 0) : 0;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO recovery_cases (
         id, customer_id, payment_id, amount_at_risk, expected_recovery, net_expected_value,
         candidate_actions, intervention_cost, failure_reason,
@@ -181,7 +181,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     );
 
     const actionId = uuidv4();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO recovery_actions (
         id, case_id, action_type, status, scheduled_at, requires_approval, ai_reasoning, discount_percent, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -261,13 +261,13 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
         recoveredAmount += recoveredValue;
         funnel.successfulRecoveries++;
 
-        db.prepare(`
+        await db.prepare(`
           UPDATE recovery_cases 
           SET status = 'recovered', recovered_amount = ?, resolved_at = ? 
           WHERE id = ?
         `).run(recoveredValue, now.toISOString(), caseId);
 
-        db.prepare(`
+        await db.prepare(`
           UPDATE recovery_actions 
           SET status = 'completed', result = 'success', executed_at = ? 
           WHERE id = ?
@@ -281,7 +281,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
           newAffinity = Math.max(0.0, customer.discount_affinity * 0.85 + 0.10 * 0.15);
         }
 
-        db.prepare(`
+        await db.prepare(`
           UPDATE customers 
           SET successful_payments = successful_payments + 1, 
               discount_affinity = ? 
@@ -305,7 +305,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
           amount: recoveredValue
         });
       } else {
-        db.prepare(`UPDATE recovery_actions SET status = 'completed', result = 'unresolved', executed_at = ? WHERE id = ?`)
+        await db.prepare(`UPDATE recovery_actions SET status = 'completed', result = 'unresolved', executed_at = ? WHERE id = ?`)
           .run(now.toISOString(), actionId);
 
         caseAuditTimeline.push({
@@ -375,7 +375,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   };
 
   // Persist run in dataset_runs table
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO dataset_runs (
       id, name, filename, dataset_type, total_records, unique_customers,
       total_volume, revenue_at_risk, recovered_amount, intervention_cost,

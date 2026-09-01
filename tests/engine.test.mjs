@@ -10,12 +10,12 @@ import { checkGuardrails } from '../src/lib/engine/guardrails.js';
 import { calculateNEV, evaluateCandidates } from '../src/lib/engine/economics.js';
 import { deterministicFallback } from '../src/lib/engine/fallback.js';
 import { classifyAttribution, estimateNaiveBaseline } from '../src/lib/engine/attribution.js';
-import { processFailedPayment, processEvent, executeRecoveryAction } from '../src/lib/engine/orchestrator.js';
+import { processFailedPayment, processEvent, executeRecoveryAction, processRecoveryOutcome } from '../src/lib/engine/orchestrator.js';
 import { parseCSV, autoMapColumns } from '../src/lib/dataset/parser.js';
 
 describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
-  before(() => {
-    resetDatabase();
+  before(async () => {
+    await resetDatabase();
   });
 
   test('1. NEV Calculation & Candidate Evaluation', () => {
@@ -63,28 +63,28 @@ describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
     assert.match(guardDiscount.modifications[0], /MAX_DISCOUNT_PERCENT/);
   });
 
-  test('4. Idempotency Check for Failed Payments', () => {
+  test('4. Idempotency Check for Failed Payments', async () => {
     const db = getDb();
     const custId = 'cust_test_idempotent';
     const payId = 'pay_test_idempotent';
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO customers (id, name, email, plan, mrr, lifetime_value)
       VALUES (?, 'Idempotent Test', 'test@example.com', 'starter', 1000, 5000)
     `).run(custId);
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO payments (id, customer_id, amount, status, failure_reason)
       VALUES (?, ?, 50000, 'failed', 'insufficient_funds')
     `).run(payId, custId);
 
     // First processing creates a case
-    const firstCall = processFailedPayment(payId);
+    const firstCall = await processFailedPayment(payId);
     assert.ok(firstCall.caseId);
     assert.equal(firstCall.skipped, undefined);
 
     // Second processing returns existing case without duplicate insertion
-    const secondCall = processFailedPayment(payId);
+    const secondCall = await processFailedPayment(payId);
     assert.equal(secondCall.caseId, firstCall.caseId);
     assert.equal(secondCall.skipped, true);
   });
@@ -132,5 +132,23 @@ describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
 
     const decision = decideAction(caseData, customer, classification, prediction, priority);
     assert.equal(decision.requiresApproval, true);
+  });
+
+  test('9. Repeated success outcomes settle a case and customer metrics exactly once', async () => {
+    const db = getDb();
+    const customerId = 'cust_outcome_once';
+    const paymentId = 'pay_outcome_once';
+    await db.prepare(`INSERT INTO customers (id, name, email, plan, mrr, lifetime_value) VALUES (?, 'Outcome Test', 'outcome@example.com', 'starter', 1000, 5000)`).run(customerId);
+    await db.prepare(`INSERT INTO payments (id, customer_id, amount, status, failure_reason) VALUES (?, ?, 10000, 'failed', 'gateway_error')`).run(paymentId, customerId);
+    const { caseId } = await processFailedPayment(paymentId);
+
+    const first = await processRecoveryOutcome(caseId, { success: true });
+    const second = await processRecoveryOutcome(caseId, { success: true });
+    const customer = await db.prepare('SELECT successful_payments, total_payments FROM customers WHERE id = ?').get(customerId);
+
+    assert.equal(first.recovered, true);
+    assert.equal(second.skipped, true);
+    assert.equal(customer.successful_payments, 1);
+    assert.equal(customer.total_payments, 1);
   });
 });

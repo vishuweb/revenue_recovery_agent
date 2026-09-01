@@ -75,6 +75,26 @@ export default function CaseDetailPage({ params }) {
         return;
       }
 
+      // If not live checkout (no keys configured), handle simulated payment seamlessly
+      if (!orderData.isLiveCheckout || !orderData.keyId || orderData.keyId.includes('mock')) {
+        toast.info('Simulating Checkout Settlement (Add RAZORPAY_KEY_ID in .env.local for live modal)...');
+        await fetch('/api/razorpay/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.orderId,
+            razorpay_payment_id: `pay_sim_${Date.now()}`,
+            razorpay_signature: 'sim_sig',
+            caseId: c.id,
+            customerId: customer?.id,
+            amount: c.amount_at_risk
+          })
+        });
+        toast.success('Simulated Razorpay recovery settled! Case marked as Recovered.');
+        await fetchCase();
+        return;
+      }
+
       const loadScript = (src) => {
         return new Promise((resolve) => {
           if (document.querySelector(`script[src="${src}"]`)) {
@@ -91,22 +111,7 @@ export default function CaseDetailPage({ params }) {
 
       const scriptLoaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
       if (!scriptLoaded || typeof window.Razorpay === 'undefined') {
-        toast.warning('Razorpay Checkout SDK not reachable. Running simulated payment...');
-        // Fallback simulate verification
-        await fetch('/api/razorpay/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            razorpay_order_id: orderData.orderId,
-            razorpay_payment_id: `pay_sim_${Date.now()}`,
-            razorpay_signature: 'sim_sig',
-            caseId: c.id,
-            customerId: customer?.id,
-            amount: c.amount_at_risk
-          })
-        });
-        toast.success('Simulated Razorpay recovery settled!');
-        await fetchCase();
+        toast.warning('Razorpay Checkout SDK not reachable.');
         return;
       }
 

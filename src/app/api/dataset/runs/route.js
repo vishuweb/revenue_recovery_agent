@@ -4,13 +4,13 @@ import { getDb } from '@/lib/db/database';
 export async function GET() {
   try {
     const db = getDb();
-    const runs = db.prepare(`
+    const runs = await db.prepare(`
       SELECT * FROM dataset_runs 
       ORDER BY created_at DESC 
       LIMIT 50
     `).all();
 
-    const parsedRuns = runs.map(r => ({
+    const parsedRuns = (runs || []).map(r => ({
       ...r,
       run_summary: r.run_summary ? JSON.parse(r.run_summary) : null
     }));

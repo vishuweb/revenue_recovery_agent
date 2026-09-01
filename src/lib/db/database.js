@@ -2,16 +2,50 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { PgDatabase } from './pg-adapter.js';
+
+// Auto-load .env.local if present in dev/node execution
+if (fs.existsSync(path.join(process.cwd(), '.env.local'))) {
+  try {
+    const envContent = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.substring(0, eqIdx).trim();
+        let val = trimmed.substring(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch {
+    // Ignore error reading env
+  }
+}
 
 /**
  * Get the singleton database instance.
- * Initializes schema on first call. Uses WAL mode for concurrency.
+ * Returns PgDatabase if DATABASE_URL is set, otherwise an async-compatible SQLite adapter.
  */
 export function getDb() {
   if (globalThis.__revenueRecoveryDb) {
     return globalThis.__revenueRecoveryDb;
   }
 
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (databaseUrl) {
+    const pgDb = new PgDatabase(databaseUrl);
+    globalThis.__revenueRecoveryDb = pgDb;
+    return pgDb;
+  }
+
+  // SQLite fallback
   const dbPath = path.join(process.cwd(), 'data', 'revenue_recovery.db');
   const dataDir = path.dirname(dbPath);
 
@@ -19,22 +53,66 @@ export function getDb() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const db = new Database(dbPath);
+  const rawDb = new Database(dbPath);
 
   // Performance pragmas
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.pragma('busy_timeout = 5000');
+  rawDb.pragma('journal_mode = WAL');
+  rawDb.pragma('foreign_keys = ON');
+  rawDb.pragma('busy_timeout = 5000');
 
   // Apply schema and migrations
-  applySchemaAndMigrations(db);
+  applySchemaAndMigrations(rawDb);
 
-  globalThis.__revenueRecoveryDb = db;
-  return db;
+  const sqliteAdapter = {
+    isPostgres: false,
+    prepare(sql) {
+      const stmt = rawDb.prepare(sql);
+      return {
+        all(...args) {
+          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+          return stmt.all(...params);
+        },
+        get(...args) {
+          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+          return stmt.get(...params);
+        },
+        run(...args) {
+          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+          return stmt.run(...params);
+        }
+      };
+    },
+    exec(sql) {
+      return rawDb.exec(sql);
+    },
+    pragma(str) {
+      return rawDb.pragma(str);
+    },
+    transaction(fn) {
+      return async (...args) => {
+        rawDb.exec('BEGIN');
+        try {
+          const res = await fn(sqliteAdapter, ...args);
+          rawDb.exec('COMMIT');
+          return res;
+        } catch (err) {
+          try {
+            rawDb.exec('ROLLBACK');
+          } catch {
+            // ignore rollback error
+          }
+          throw err;
+        }
+      };
+    },
+    rawDb
+  };
+
+  globalThis.__revenueRecoveryDb = sqliteAdapter;
+  return sqliteAdapter;
 }
 
 function applySchemaAndMigrations(db) {
-  // First run column migrations on any existing tables to ensure index creation succeeds
   try {
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
     
@@ -64,10 +142,32 @@ function applySchemaAndMigrations(db) {
 
 /**
  * Reset the entire database — drops all tables and re-initializes schema.
- * Used by the simulator to start completely fresh with new schema.
+ * Supports both SQLite and PostgreSQL.
  */
-export function resetDatabase() {
+export async function resetDatabase() {
   const db = getDb();
+
+  if (db.isPostgres) {
+    await db.exec(`
+      DROP TABLE IF EXISTS dataset_runs CASCADE;
+      DROP TABLE IF EXISTS audit_log CASCADE;
+      DROP TABLE IF EXISTS recovery_actions CASCADE;
+      DROP TABLE IF EXISTS recovery_cases CASCADE;
+      DROP TABLE IF EXISTS events CASCADE;
+      DROP TABLE IF EXISTS payments CASCADE;
+      DROP TABLE IF EXISTS invoices CASCADE;
+      DROP TABLE IF EXISTS subscriptions CASCADE;
+      DROP TABLE IF EXISTS customers CASCADE;
+    `);
+    const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.pg.sql');
+    if (fs.existsSync(schemaPath)) {
+      const schema = fs.readFileSync(schemaPath, 'utf-8');
+      await db.exec(schema);
+    }
+    return;
+  }
+
+  // SQLite path
   db.pragma('foreign_keys = OFF');
   db.exec(`
     DROP TABLE IF EXISTS dataset_runs;
@@ -82,26 +182,34 @@ export function resetDatabase() {
   `);
   db.pragma('foreign_keys = ON');
 
-  applySchemaAndMigrations(db);
+  const raw = db.rawDb || db;
+  applySchemaAndMigrations(raw);
 }
 
 /**
  * Log an entry to the audit trail.
  * @param {Object} entry - { entityType, entityId, eventType, description, details, actor, amount }
  */
-export function auditLog(entry) {
+export async function auditLog(entry) {
   const db = getDb();
-  db.prepare(`
+  const id = uuidv4();
+  const detailsStr = typeof entry.details === 'string' ? entry.details : (entry.details ? JSON.stringify(entry.details) : null);
+  const actor = entry.actor || 'system';
+  const amount = entry.amount || null;
+
+  const result = await db.prepare(`
     INSERT INTO audit_log (id, entity_type, entity_id, event_type, description, details, actor, amount, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
-    uuidv4(),
+    id,
     entry.entityType,
     entry.entityId,
     entry.eventType,
     entry.description,
-    typeof entry.details === 'string' ? entry.details : (entry.details ? JSON.stringify(entry.details) : null),
-    entry.actor || 'system',
-    entry.amount || null
+    detailsStr,
+    actor,
+    amount
   );
+
+  return result;
 }

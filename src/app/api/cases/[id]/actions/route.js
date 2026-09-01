@@ -10,41 +10,36 @@ export async function POST(request, { params }) {
     const { actionType, execute } = await request.json()
     const db = getDb()
 
-    const caseRecord = db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
+    const allowedActionTypes = new Set(['retry', 'payment_link', 'email', 'sms', 'cart_reminder', 'discount', 'free_shipping', 'targeted_campaign', 'escalate', 'no_action'])
+    if (!allowedActionTypes.has(actionType)) return NextResponse.json({ error: 'Unsupported actionType' }, { status: 400 })
+
+    const caseRecord = await db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
     if (!caseRecord) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
 
     const newActionId = uuidv4()
     
-    const actionObj = {
-      id: newActionId,
-      case_id: id,
-      type: actionType,
-      status: 'pending',
-      priority: 'high',
-      scheduled_for: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    }
-    
-    // Guardrails check could be simulated here, or pass action directly
-    const guardrailsResult = checkGuardrails(caseRecord, actionType, [], null)
+    // Guardrails check
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(caseRecord.customer_id)
+    const history = await db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(id)
+    const guardrailsResult = checkGuardrails(caseRecord, actionType, history, customer)
     if (!guardrailsResult.allowed) {
       return NextResponse.json({ error: 'Guardrails failed', details: guardrailsResult.violations }, { status: 403 })
     }
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO recovery_actions (id, case_id, action_type, status, scheduled_at, ai_reasoning, created_at)
       VALUES (?, ?, ?, 'pending', datetime('now'), 'Manual action created by user', datetime('now'))
     `).run(newActionId, id, actionType)
 
-    auditLog({ entityType: 'case', entityId: id, eventType: 'manual_action_created', actor: 'user', description: `Manual action ${actionType} created`, details: { actionId: newActionId, actionType } })
+    await auditLog({ entityType: 'case', entityId: id, eventType: 'manual_action_created', actor: 'user', description: `Manual action ${actionType} created`, details: { actionId: newActionId, actionType } })
 
     let result = null
     if (execute) {
-      db.prepare(`UPDATE recovery_actions SET status = 'approved', approved_by = 'user' WHERE id = ?`).run(newActionId)
+      await db.prepare(`UPDATE recovery_actions SET status = 'approved', approved_by = 'user' WHERE id = ?`).run(newActionId)
       result = await executeRecoveryAction(newActionId)
     }
 
-    const savedAction = db.prepare(`SELECT * FROM recovery_actions WHERE id = ?`).get(newActionId)
+    const savedAction = await db.prepare(`SELECT * FROM recovery_actions WHERE id = ?`).get(newActionId)
 
     return NextResponse.json({ action: savedAction, executionResult: result })
   } catch (error) {

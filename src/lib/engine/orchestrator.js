@@ -14,20 +14,20 @@ import { getPaymentProvider, getSimulationProvider } from '../providers/provider
  * Process a failed payment — idempotent.
  * If a recovery case already exists for this payment_id, returns existing case.
  */
-export function processFailedPayment(paymentId) {
+export async function processFailedPayment(paymentId) {
   const db = getDb();
   
-  const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+  const payment = await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
   if (!payment) throw new Error('Payment not found');
 
   // Idempotency: check if case already exists for this payment
-  const existingCase = db.prepare('SELECT id FROM recovery_cases WHERE payment_id = ?').get(paymentId);
+  const existingCase = await db.prepare('SELECT id FROM recovery_cases WHERE payment_id = ?').get(paymentId);
   if (existingCase) {
     logDecision(existingCase.id, 'idempotency_skip', { key: paymentId, reason: 'Recovery case already exists' });
     return { caseId: existingCase.id, actionId: null, decision: null, skipped: true };
   }
   
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(payment.customer_id);
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(payment.customer_id);
   if (!customer) throw new Error('Customer not found');
 
   const classification = classifyFailure(payment.failure_reason, payment.failure_source);
@@ -66,8 +66,9 @@ export function processFailedPayment(paymentId) {
   const expectedRecovery = selectedCandidate ? (selectedCandidate.expectedRecovery || 0) : 0;
   const nev = selectedCandidate ? (selectedCandidate.nev || 0) : 0;
 
-  const insertCase = db.transaction(() => {
-    db.prepare(`
+  const insertCase = db.transaction(async (txDb) => {
+    const d = txDb || db;
+    await d.prepare(`
       INSERT INTO recovery_cases (
         id, customer_id, payment_id, subscription_id, invoice_id, amount_at_risk,
         expected_recovery, net_expected_value, candidate_actions,
@@ -82,7 +83,7 @@ export function processFailedPayment(paymentId) {
       decision.action, decision.reasoning, 'open', 1, 5, 0, 0, caseData.opened_at, expiresAt, now
     );
 
-    db.prepare(`
+    await d.prepare(`
       INSERT INTO recovery_actions (
         id, case_id, action_type, status, scheduled_at, requires_approval, ai_reasoning, discount_percent, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -93,7 +94,17 @@ export function processFailedPayment(paymentId) {
     );
   });
 
-  insertCase();
+  try {
+    await insertCase();
+  } catch (error) {
+    // The database constraint is the final idempotency barrier when two workers
+    // receive the same provider event concurrently.
+    const concurrentCase = await db.prepare('SELECT id FROM recovery_cases WHERE payment_id = ?').get(paymentId);
+    if (concurrentCase) {
+      return { caseId: concurrentCase.id, actionId: null, decision: null, skipped: true };
+    }
+    throw error;
+  }
 
   // Observability
   logDecision(caseId, 'event_received', { failureReason: payment.failure_reason, amountAtRisk: payment.amount });
@@ -112,10 +123,10 @@ export function processFailedPayment(paymentId) {
 /**
  * Process a business event (abandonment, expiry, etc.) — idempotent.
  */
-export function processEvent(eventId) {
+export async function processEvent(eventId) {
   const db = getDb();
   
-  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+  const event = await db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
   if (!event) throw new Error('Event not found');
   
   // Idempotency: skip if already processed
@@ -124,7 +135,7 @@ export function processEvent(eventId) {
     return { caseId: null, actionId: null, decision: null, skipped: true };
   }
 
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(event.customer_id);
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(event.customer_id);
   if (!customer) throw new Error('Customer not found');
 
   const metadata = event.metadata ? JSON.parse(event.metadata) : {};
@@ -165,14 +176,15 @@ export function processEvent(eventId) {
   const expectedRecovery = selectedCandidate ? (selectedCandidate.expectedRecovery || 0) : 0;
   const nev = selectedCandidate ? (selectedCandidate.nev || 0) : 0;
 
-  const insertEventCase = db.transaction(() => {
-    db.prepare(`
+  const insertEventCase = db.transaction(async (txDb) => {
+    const d = txDb || db;
+    await d.prepare(`
       INSERT INTO payments (
         id, customer_id, amount, currency, status, method, failure_reason, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(paymentId, customer.id, event.amount || 0, 'INR', 'pending', 'none', event.event_type, now);
 
-    db.prepare(`
+    await d.prepare(`
       INSERT INTO recovery_cases (
         id, customer_id, event_id, payment_id, amount_at_risk, intervention_cost,
         expected_recovery, net_expected_value, candidate_actions,
@@ -187,7 +199,7 @@ export function processEvent(eventId) {
       decision.action, decision.reasoning, 'open', 1, 5, 0, 0, caseData.opened_at, expiresAt, now
     );
 
-    db.prepare(`
+    await d.prepare(`
       INSERT INTO recovery_actions (
         id, case_id, action_type, status, scheduled_at, requires_approval, ai_reasoning, discount_percent, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -197,11 +209,11 @@ export function processEvent(eventId) {
       decision.discount_percent || null, now
     );
 
-    db.prepare('UPDATE events SET processed = 1 WHERE id = ?').run(event.id);
-    db.prepare('UPDATE customers SET intervention_count = COALESCE(intervention_count, 0) + 1, last_intervention_at = ? WHERE id = ?').run(now, customer.id);
+    await d.prepare('UPDATE events SET processed = 1 WHERE id = ?').run(event.id);
+    await d.prepare('UPDATE customers SET intervention_count = COALESCE(intervention_count, 0) + 1, last_intervention_at = ? WHERE id = ?').run(now, customer.id);
   });
 
-  insertEventCase();
+  await insertEventCase();
 
   // Observability
   logDecision(caseId, 'event_received', { eventType: event.event_type, amountAtRisk: event.amount });
@@ -218,7 +230,7 @@ export function processEvent(eventId) {
 export async function executeRecoveryAction(actionId) {
   const db = getDb();
   
-  const action = db.prepare('SELECT * FROM recovery_actions WHERE id = ?').get(actionId);
+  const action = await db.prepare('SELECT * FROM recovery_actions WHERE id = ?').get(actionId);
   if (!action) throw new Error('Action not found');
 
   // Dead-letter check: don't execute if already dead-lettered
@@ -226,14 +238,18 @@ export async function executeRecoveryAction(actionId) {
     return { status: 'dead_letter', reason: 'Action was moved to dead-letter queue' };
   }
   
-  const caseData = db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(action.case_id);
+  const caseData = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(action.case_id);
   if (!caseData) throw new Error('Case not found');
 
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
-  const history = db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(caseData.id);
+  if (!['open', 'in_progress'].includes(caseData.status)) {
+    return { status: 'skipped', reason: `Case is ${caseData.status}` };
+  }
+
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
+  const history = await db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(caseData.id);
 
   // Cross-case customer fatigue check
-  const recentInterventions = db.prepare(`
+  const recentInterventions = await db.prepare(`
     SELECT COUNT(*) as count FROM recovery_actions ra
     JOIN recovery_cases rc ON ra.case_id = rc.id
     WHERE rc.customer_id = ? AND ra.executed_at > datetime('now', '-30 days')
@@ -252,7 +268,7 @@ export async function executeRecoveryAction(actionId) {
   });
   
   if (!guardrailsResult.allowed) {
-    db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
+    await db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
       .run('skipped', JSON.stringify({ violations: guardrailsResult.violations }), action.id);
     
     return { status: 'skipped', guardrailsResult };
@@ -269,8 +285,16 @@ export async function executeRecoveryAction(actionId) {
     return { status: 'pending_approval' };
   }
 
-  db.prepare('UPDATE recovery_actions SET status = ?, executed_at = ? WHERE id = ?')
-    .run('executing', new Date().toISOString(), action.id);
+  // Atomically claim the action.  Loading it above is not sufficient: cron
+  // workers and manual execution may race each other.
+  const claim = await db.prepare(`
+    UPDATE recovery_actions
+    SET status = ?, executed_at = ?
+    WHERE id = ? AND status IN ('pending', 'approved')
+  `).run('executing', new Date().toISOString(), action.id);
+  if ((claim.changes ?? claim.rowCount ?? 0) !== 1) {
+    return { status: 'skipped', reason: 'Action was already claimed or completed' };
+  }
 
   const provider = getPaymentProvider();
   
@@ -279,29 +303,29 @@ export async function executeRecoveryAction(actionId) {
 
   try {
     if (action.action_type === 'retry') {
-      const payment = db.prepare('SELECT * FROM payments WHERE id = ?').get(caseData.payment_id);
+      const payment = await db.prepare('SELECT * FROM payments WHERE id = ?').get(caseData.payment_id);
       result = await provider.retryPayment(payment?.id || caseData.payment_id, payment?.amount || caseData.amount_at_risk, caseData.customer_id, caseData);
       
       if (result.success) {
-        db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+        await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('completed', 'success', JSON.stringify(result), action.id);
         
         await processRecoveryOutcome(caseData.id, result);
         logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success', paymentId: result.providerPaymentId || null });
       } else {
-        db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+        await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('failed', 'failed', JSON.stringify(result), action.id);
         
-        db.prepare('UPDATE recovery_cases SET attempts_made = attempts_made + 1, updated_at = ? WHERE id = ?')
+        await db.prepare('UPDATE recovery_cases SET attempts_made = attempts_made + 1, updated_at = ? WHERE id = ?')
           .run(new Date().toISOString(), caseData.id);
 
         logDecision(caseData.id, 'execution_failed', { actionType: 'retry', error: result.failureReason || 'unknown' });
 
         // Re-evaluate and schedule next action
-        scheduleNextAction(caseData.id, customer);
+        await scheduleNextAction(caseData.id, customer);
       }
     } else if (action.action_type === 'payment_link') {
-      const customerRecord = customer || db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
+      const customerRecord = customer || (await db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id));
       result = await provider.createPaymentLink(
         caseData.customer_id,
         caseData.amount_at_risk,
@@ -317,31 +341,35 @@ export async function executeRecoveryAction(actionId) {
           }
         }
       );
-      db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
       logDecision(caseData.id, 'executed', { actionType: 'payment_link', result: 'success', paymentUrl: result.url || null });
     } else if (action.action_type === 'no_action') {
       // No_action is explicitly "do nothing" — mark as completed successfully
       result = { msg: 'No action taken — optimal financial decision', success: true };
-      db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'no_action', JSON.stringify(result), action.id);
+      await db.prepare(`
+        UPDATE recovery_cases SET status = 'stopped', resolved_at = ?, updated_at = ?
+        WHERE id = ? AND status IN ('open', 'in_progress')
+      `).run(new Date().toISOString(), new Date().toISOString(), caseData.id);
       logDecision(caseData.id, 'executed', { actionType: 'no_action', result: 'completed' });
     } else if (['discount', 'free_shipping', 'cart_reminder', 'targeted_campaign'].includes(action.action_type)) {
       result = { msg: `Executed ${action.action_type}`, success: true };
-      db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
 
       if (action.discount_percent) {
         const clampedDiscount = Math.min(action.discount_percent, POLICY.MAX_DISCOUNT_PERCENT);
         const interventionCost = Math.round(caseData.amount_at_risk * (clampedDiscount / 100));
-        db.prepare('UPDATE recovery_cases SET intervention_cost = ? WHERE id = ?')
+        await db.prepare('UPDATE recovery_cases SET intervention_cost = ? WHERE id = ?')
           .run(interventionCost, caseData.id);
       }
       logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
     } else {
       // email, sms, escalate, stop
       result = { msg: `Executed ${action.action_type}` };
-      db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
       logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
     }
@@ -362,12 +390,12 @@ export async function executeRecoveryAction(actionId) {
 
     if (isRetryable && failureCount < 3) {
       // Retry with backoff
-      db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
         .run('failed', JSON.stringify({ error: err.message, retryable: true }), action.id);
       logDecision(caseData.id, 'execution_failed', { actionType: action.action_type, error: err.message, retryable: true });
     } else {
       // Move to dead-letter queue
-      db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
+      await db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
         .run('dead_letter', JSON.stringify({ error: err.message, retryable: false, failureCount }), action.id);
       logDecision(caseData.id, 'dead_letter', { actionType: action.action_type, reason: `${failureCount + 1} failures: ${err.message}` });
     }
@@ -381,9 +409,9 @@ export async function executeRecoveryAction(actionId) {
 /**
  * Schedule the next action after a failed attempt.
  */
-function scheduleNextAction(caseId, customer) {
+async function scheduleNextAction(caseId, customer) {
   const db = getDb();
-  const updatedCaseData = db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
+  const updatedCaseData = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
   if (!updatedCaseData) return;
 
   const classification = classifyFailure(updatedCaseData.failure_reason);
@@ -400,7 +428,7 @@ function scheduleNextAction(caseId, customer) {
   const nextActionId = uuidv4();
   const scheduledAt = new Date(Date.now() + (nextDecision.scheduledDelay || 0)).toISOString();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO recovery_actions (
       id, case_id, action_type, status, scheduled_at, requires_approval, ai_reasoning, discount_percent, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -413,7 +441,7 @@ function scheduleNextAction(caseId, customer) {
   // Update case NEV
   const selectedCandidate = nextDecision.candidates ? nextDecision.candidates.find(c => c.selected) : null;
   if (selectedCandidate) {
-    db.prepare('UPDATE recovery_cases SET expected_recovery = ?, net_expected_value = ?, candidate_actions = ?, recommended_action = ?, ai_reasoning = ?, recovery_probability = ?, updated_at = ? WHERE id = ?')
+    await db.prepare('UPDATE recovery_cases SET expected_recovery = ?, net_expected_value = ?, candidate_actions = ?, recommended_action = ?, ai_reasoning = ?, recovery_probability = ?, updated_at = ? WHERE id = ?')
       .run(
         selectedCandidate.expectedRecovery || 0, selectedCandidate.nev || 0,
         JSON.stringify(nextDecision.candidates), nextDecision.action, nextDecision.reasoning,
@@ -428,26 +456,33 @@ function scheduleNextAction(caseId, customer) {
 export async function processRecoveryOutcome(caseId, paymentResult) {
   const db = getDb();
   
-  const caseData = db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
+  const caseData = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
   if (!caseData) return;
+
+  if (caseData.status === 'recovered') {
+    return { skipped: true, reason: 'Case already recovered' };
+  }
 
   if (paymentResult.success) {
     // Determine attribution
-    const actions = db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(caseId);
+    const actions = await db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(caseId);
     const attribution = classifyAttribution(caseData, actions);
 
-    const updateRecovery = db.transaction(() => {
-      db.prepare(`
+    const updateRecovery = db.transaction(async (txDb) => {
+      const d = txDb || db;
+      const recoveryUpdate = await d.prepare(`
         UPDATE recovery_cases 
         SET status = 'recovered', recovered_amount = amount_at_risk, 
             attribution_type = ?, resolved_at = ?, updated_at = ? 
-        WHERE id = ?
+        WHERE id = ? AND status IN ('open', 'in_progress')
       `).run(attribution.type, new Date().toISOString(), new Date().toISOString(), caseId);
 
+      if ((recoveryUpdate.changes ?? recoveryUpdate.rowCount ?? 0) !== 1) return false;
+
       // Adaptive feedback loop
-      const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
+      const customer = await d.prepare('SELECT * FROM customers WHERE id = ?').get(caseData.customer_id);
       if (customer) {
-        const successfulAction = db.prepare("SELECT * FROM recovery_actions WHERE case_id = ? AND status = 'completed' ORDER BY created_at DESC LIMIT 1").get(caseId);
+        const successfulAction = await d.prepare("SELECT * FROM recovery_actions WHERE case_id = ? AND status = 'completed' ORDER BY created_at DESC LIMIT 1").get(caseId);
         const discountGiven = successfulAction?.discount_percent || 0;
         
         let updatedAffinity = customer.discount_affinity || 0.5;
@@ -457,7 +492,7 @@ export async function processRecoveryOutcome(caseId, paymentResult) {
           updatedAffinity = Math.max(0.0, updatedAffinity * 0.85 + 0.10 * 0.15);
         }
 
-        db.prepare(`
+        await d.prepare(`
           UPDATE customers 
           SET successful_payments = successful_payments + 1, 
               total_payments = total_payments + 1,
@@ -465,18 +500,21 @@ export async function processRecoveryOutcome(caseId, paymentResult) {
           WHERE id = ?
         `).run(parseFloat(updatedAffinity.toFixed(4)), caseData.customer_id);
       } else {
-        db.prepare('UPDATE customers SET successful_payments = successful_payments + 1, total_payments = total_payments + 1 WHERE id = ?').run(caseData.customer_id);
+        await d.prepare('UPDATE customers SET successful_payments = successful_payments + 1, total_payments = total_payments + 1 WHERE id = ?').run(caseData.customer_id);
       }
 
       if (caseData.subscription_id) {
-        db.prepare("UPDATE subscriptions SET status = 'active', updated_at = ? WHERE id = ?").run(new Date().toISOString(), caseData.subscription_id);
+        await d.prepare("UPDATE subscriptions SET status = 'active', updated_at = ? WHERE id = ?").run(new Date().toISOString(), caseData.subscription_id);
       }
+      return true;
     });
 
-    updateRecovery();
+    const recovered = await updateRecovery();
+    if (!recovered) return { skipped: true, reason: 'Case was resolved concurrently' };
 
-    logDecision(caseId, 'recovered', { recoveredAmount: caseData.amount_at_risk }, { amount: caseData.amount_at_risk });
-    logDecision(caseId, 'recovery_attributed', { attributionType: attribution.type, confidence: attribution.confidence, explanation: attribution.explanation });
+    await logDecision(caseId, 'recovered', { recoveredAmount: caseData.amount_at_risk }, { amount: caseData.amount_at_risk });
+    await logDecision(caseId, 'recovery_attributed', { attributionType: attribution.type, confidence: attribution.confidence, explanation: attribution.explanation });
+    return { recovered: true, attribution };
   }
 }
 
@@ -484,7 +522,7 @@ export async function processPendingAutomations() {
   const db = getDb();
   const now = new Date().toISOString();
   
-  const pendingActions = db.prepare(`
+  const pendingActions = await db.prepare(`
     SELECT id FROM recovery_actions 
     WHERE status = 'pending' 
       AND scheduled_at <= ?
@@ -501,7 +539,7 @@ export async function processPendingAutomations() {
     }
   }
 
-  const unhandledPayments = db.prepare(`
+  const unhandledPayments = await db.prepare(`
     SELECT p.id FROM payments p
     LEFT JOIN recovery_cases r ON p.id = r.payment_id
     WHERE p.status = 'failed' AND r.id IS NULL
@@ -510,7 +548,7 @@ export async function processPendingAutomations() {
   const caseResults = [];
   for (const payment of unhandledPayments) {
     try {
-      const result = processFailedPayment(payment.id);
+      const result = await processFailedPayment(payment.id);
       caseResults.push({ id: payment.id, caseId: result.caseId });
     } catch (e) {
       caseResults.push({ id: payment.id, error: e.message });

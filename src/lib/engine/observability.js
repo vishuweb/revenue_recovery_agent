@@ -44,7 +44,7 @@ export const DECISION_PHASES = [
  * @param {Object} data — phase-specific structured payload
  * @param {Object} [options] — { actor, amount, entityType }
  */
-export function logDecision(caseId, phase, data, options = {}) {
+export async function logDecision(caseId, phase, data, options = {}) {
   const entry = {
     entityType: options.entityType || 'case',
     entityId: caseId,
@@ -60,7 +60,7 @@ export function logDecision(caseId, phase, data, options = {}) {
   };
 
   try {
-    auditLog(entry);
+    await auditLog(entry);
   } catch (err) {
     // Observability must never crash the decision pipeline
     console.error(`[observability] Failed to log decision phase=${phase} case=${caseId}:`, err.message);

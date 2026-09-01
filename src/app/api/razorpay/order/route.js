@@ -15,7 +15,7 @@ export async function POST(request) {
     const db = getDb();
     let customer = null;
     if (customerId) {
-      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+      customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     }
 
     const provider = getRazorpayProvider();

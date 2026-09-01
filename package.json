@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test tests/engine.test.mjs && node tests/comprehensive.test.mjs",
+    "test:unit": "node --test tests/engine.test.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.0",
     "@hugeicons/react": "^1.1.10",
     "better-sqlite3": "^13.0.3",
     "next": "^15.1.0",
+    "pg": "^8.23.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",

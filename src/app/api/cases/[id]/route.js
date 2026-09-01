@@ -8,15 +8,15 @@ export async function GET(request, { params }) {
     const { id } = await params
     const db = getDb()
 
-    const caseRecord = db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
+    const caseRecord = await db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
     if (!caseRecord) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
 
-    const customer = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(caseRecord.customer_id)
-    const recoveryActions = db.prepare(`SELECT * FROM recovery_actions WHERE case_id = ? ORDER BY created_at ASC`).all(id)
-    const auditEntries = db.prepare(`SELECT * FROM audit_log WHERE entity_id = ? ORDER BY created_at ASC`).all(id)
-    const payment = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(caseRecord.payment_id)
-    const subscription = customer ? db.prepare(`SELECT * FROM subscriptions WHERE customer_id = ?`).get(customer.id) : null
-    const invoice = payment ? db.prepare(`SELECT * FROM invoices WHERE id = ?`).get(payment.invoice_id) : null
+    const customer = await db.prepare(`SELECT * FROM customers WHERE id = ?`).get(caseRecord.customer_id)
+    const recoveryActions = await db.prepare(`SELECT * FROM recovery_actions WHERE case_id = ? ORDER BY created_at ASC`).all(id)
+    const auditEntries = await db.prepare(`SELECT * FROM audit_log WHERE entity_id = ? ORDER BY created_at ASC`).all(id)
+    const payment = await db.prepare(`SELECT * FROM payments WHERE id = ?`).get(caseRecord.payment_id)
+    const subscription = customer ? (await db.prepare(`SELECT * FROM subscriptions WHERE customer_id = ?`).get(customer.id)) : null
+    const invoice = payment ? (await db.prepare(`SELECT * FROM invoices WHERE id = ?`).get(payment.invoice_id)) : null
 
     return NextResponse.json({
       case: caseRecord,
@@ -42,7 +42,7 @@ export async function PATCH(request, { params }) {
     let { actionId } = body
     const db = getDb()
 
-    const caseRecord = db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
+    const caseRecord = await db.prepare(`SELECT * FROM recovery_cases WHERE id = ?`).get(id)
     if (!caseRecord) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
 
     if (notes) {
@@ -52,12 +52,12 @@ export async function PATCH(request, { params }) {
 
     if (action === 'approve') {
       if (!actionId) {
-        const pendingAction = db.prepare(`SELECT id FROM recovery_actions WHERE case_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`).get(id)
+        const pendingAction = await db.prepare(`SELECT id FROM recovery_actions WHERE case_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`).get(id)
         if (pendingAction) actionId = pendingAction.id
       }
       if (!actionId) return NextResponse.json({ error: 'No pending action found to approve' }, { status: 400 })
 
-      db.prepare(`UPDATE recovery_actions SET status = 'approved', approved_by = 'user' WHERE id = ?`).run(actionId)
+      await db.prepare(`UPDATE recovery_actions SET status = 'approved', approved_by = 'user' WHERE id = ?`).run(actionId)
       auditLog({ entityType: 'case', entityId: id, eventType: 'action_approved', actor: 'user', description: `Action approved by user`, details: { actionId } })
       const result = await executeRecoveryAction(actionId)
       return NextResponse.json(result)
@@ -65,7 +65,7 @@ export async function PATCH(request, { params }) {
 
     if (action === 'execute') {
       if (!actionId) {
-        const pendingAction = db.prepare(`SELECT id FROM recovery_actions WHERE case_id = ? AND status IN ('pending', 'approved') ORDER BY created_at DESC LIMIT 1`).get(id)
+        const pendingAction = await db.prepare(`SELECT id FROM recovery_actions WHERE case_id = ? AND status IN ('pending', 'approved') ORDER BY created_at DESC LIMIT 1`).get(id)
         if (pendingAction) actionId = pendingAction.id
       }
       if (!actionId) return NextResponse.json({ error: 'No action found to execute' }, { status: 400 })
@@ -75,14 +75,14 @@ export async function PATCH(request, { params }) {
     }
 
     if (action === 'stop') {
-      db.prepare(`UPDATE recovery_cases SET status = 'stopped', resolved_at = datetime('now') WHERE id = ?`).run(id)
+      await db.prepare(`UPDATE recovery_cases SET status = 'stopped', resolved_at = datetime('now') WHERE id = ?`).run(id)
       auditLog({ entityType: 'case', entityId: id, eventType: 'case_stopped', actor: 'user', description: 'Case stopped by user', details: {} })
       return NextResponse.json({ success: true, message: 'Case stopped' })
     }
 
     if (action === 'escalate') {
       const newActionId = uuidv4()
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO recovery_actions (id, case_id, action_type, status, scheduled_at, ai_reasoning, created_at)
         VALUES (?, ?, 'escalate', 'pending', datetime('now'), 'Manually escalated by user', datetime('now'))
       `).run(newActionId, id)

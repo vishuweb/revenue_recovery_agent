@@ -1,7 +1,7 @@
 import { getDb } from '../db/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
-export function generateSimulationData() {
+export async function generateSimulationData() {
   const db = getDb();
   
   const profiles = [
@@ -42,7 +42,7 @@ export function generateSimulationData() {
       else if (profile.plan === 'growth') avg_order_value = Math.floor(Math.random() * (50000 - 20000)) + 20000;
       else if (profile.plan === 'enterprise') avg_order_value = Math.floor(Math.random() * (200000 - 60000)) + 60000;
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO customers (
           id, name, email, phone, company, plan, mrr, lifetime_value, 
           payment_method, card_last4, card_expiry, risk_score, 
@@ -60,7 +60,7 @@ export function generateSimulationData() {
       );
 
       const subId = uuidv4();
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO subscriptions (
           id, customer_id, plan_id, plan_name, amount, interval, status, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -79,7 +79,7 @@ export function generateSimulationData() {
         const date = new Date(Date.now() - (j * 30 * 24 * 60 * 60 * 1000)).toISOString();
         const reason = isSuccess ? null : failureReasons[Math.floor(Math.random() * failureReasons.length)];
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO invoices (
             id, customer_id, subscription_id, amount, currency, status, due_date, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -87,7 +87,7 @@ export function generateSimulationData() {
           invId, customerId, subId, mrr, 'INR', isSuccess ? 'paid' : 'overdue', date, date
         );
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO payments (
             id, customer_id, subscription_id, invoice_id, amount, currency, status, 
             method, failure_reason, failure_source, provider_payment_id, attempted_at, created_at
@@ -98,16 +98,16 @@ export function generateSimulationData() {
         );
       }
 
-      db.prepare('UPDATE customers SET successful_payments = ?, failed_payments = ? WHERE id = ?').run(successfulPayments, failedPayments, customerId);
+      await db.prepare('UPDATE customers SET successful_payments = ?, failed_payments = ? WHERE id = ?').run(successfulPayments, failedPayments, customerId);
     }
   }
 
-  const allCustomers = db.prepare('SELECT id, avg_order_value FROM customers').all();
+  const allCustomers = await db.prepare('SELECT id, avg_order_value FROM customers').all();
   if (allCustomers.length > 0) {
     const numAbandonments = Math.floor(Math.random() * 3) + 3; // 3 to 5
     for (let i = 0; i < numAbandonments; i++) {
       const cust = allCustomers[Math.floor(Math.random() * allCustomers.length)];
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO events (
           id, event_type, customer_id, source, amount, metadata, processed, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -117,7 +117,7 @@ export function generateSimulationData() {
     const numExpiry = Math.floor(Math.random() * 2) + 1; // 1 to 2
     for (let i = 0; i < numExpiry; i++) {
       const cust = allCustomers[Math.floor(Math.random() * allCustomers.length)];
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO events (
           id, event_type, customer_id, source, amount, metadata, processed, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

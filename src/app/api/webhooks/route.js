@@ -18,7 +18,7 @@ export async function POST(request) {
 
     if (webhookSecret) {
       if (!signature) {
-        auditLog({
+        await auditLog({
           entityType: 'webhook',
           entityId: 'security',
           eventType: 'webhook_signature_missing',
@@ -31,7 +31,7 @@ export async function POST(request) {
 
       const isValid = RazorpayProvider.verifyWebhookSignature(rawBody, signature, webhookSecret);
       if (!isValid) {
-        auditLog({
+        await auditLog({
           entityType: 'webhook',
           entityId: 'security',
           eventType: 'webhook_signature_failed',
@@ -61,7 +61,7 @@ export async function POST(request) {
     const orderEntity = payload.order?.entity || payload.order;
     const paymentLinkEntity = payload.payment_link?.entity || payload.payment_link;
 
-    const paymentId = paymentEntity?.id || (orderEntity ? `order_pay_${orderEntity.id}` : (paymentLinkEntity ? `plink_pay_${paymentLinkEntity.id}` : null));
+    const paymentId = paymentEntity?.id || (orderEntity ? `order_pay_${orderEntity.id}` : (paymentLinkEntity ? `plink_pay_${paymentLinkEntity.id}` : `pay_${event_id || uuidv4()}`));
     const entityNotes = paymentEntity?.notes || orderEntity?.notes || paymentLinkEntity?.notes || {};
     const noteCaseId = entityNotes.caseId || entityNotes.case_id || null;
     const noteCustomerId = entityNotes.customerId || entityNotes.customer_id || null;
@@ -74,7 +74,7 @@ export async function POST(request) {
     const customerContact = paymentEntity?.contact || paymentLinkEntity?.customer?.contact || null;
 
     if (!customerId && customerEmail) {
-      const existingCustomer = db.prepare('SELECT id FROM customers WHERE email = ?').get(customerEmail);
+      const existingCustomer = await db.prepare('SELECT id FROM customers WHERE email = ?').get(customerEmail);
       if (existingCustomer) {
         customerId = existingCustomer.id;
       }
@@ -84,7 +84,7 @@ export async function POST(request) {
     if (!customerId) {
       customerId = `cust_${uuidv4().substring(0, 8)}`;
       const now = new Date().toISOString();
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO customers (
           id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
           risk_score, total_payments, successful_payments, failed_payments,
@@ -104,10 +104,10 @@ export async function POST(request) {
         now
       );
     } else {
-      const customerExists = db.prepare('SELECT id FROM customers WHERE id = ?').get(customerId);
+      const customerExists = await db.prepare('SELECT id FROM customers WHERE id = ?').get(customerId);
       if (!customerExists) {
         const now = new Date().toISOString();
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO customers (
             id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
             risk_score, total_payments, successful_payments, failed_payments,
@@ -132,7 +132,7 @@ export async function POST(request) {
     const idempotencyKey = `${event}_${paymentId || event_id || uuidv4()}`;
 
     // Idempotency check
-    const existingEvent = db.prepare('SELECT id FROM events WHERE idempotency_key = ?').get(idempotencyKey);
+    const existingEvent = await db.prepare('SELECT id FROM events WHERE idempotency_key = ?').get(idempotencyKey);
     if (existingEvent) {
       return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
     }
@@ -143,10 +143,10 @@ export async function POST(request) {
     let triggeredCaseId = null;
 
     if (event === 'payment.failed') {
-      const existingPayment = paymentId ? db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId) : null;
+      const existingPayment = paymentId ? (await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId)) : null;
 
       if (existingPayment && existingPayment.status === 'success') {
-        auditLog({
+        await auditLog({
           entityType: 'webhook',
           entityId: paymentId,
           eventType: 'payment_failed_out_of_order',
@@ -155,7 +155,7 @@ export async function POST(request) {
           details: { event, currentStatus: existingPayment.status }
         });
       } else {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO payments (id, customer_id, subscription_id, invoice_id, amount, status, method, failure_reason, failure_source, provider_payment_id, attempted_at)
           VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, 'razorpay', ?, datetime('now'))
           ON CONFLICT(id) DO UPDATE SET 
@@ -177,7 +177,7 @@ export async function POST(request) {
         const result = await processFailedPayment(paymentId);
         triggeredCaseId = result.caseId;
 
-        auditLog({
+        await auditLog({
           entityType: 'webhook',
           entityId: paymentId || 'failed_payment',
           eventType: 'payment_failed_webhook',
@@ -195,7 +195,7 @@ export async function POST(request) {
       event === 'subscription.charged'
     ) {
       if (paymentId) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO payments (id, customer_id, subscription_id, invoice_id, amount, status, method, provider_payment_id, attempted_at)
           VALUES (?, ?, ?, ?, ?, 'success', ?, ?, datetime('now'))
           ON CONFLICT(id) DO UPDATE SET 
@@ -216,19 +216,22 @@ export async function POST(request) {
       // Link to matching RecoveryCase:
       let targetCases = [];
       if (noteCaseId) {
-        const specificCase = db.prepare(`SELECT id FROM recovery_cases WHERE id = ? AND status IN ('open', 'in_progress')`).get(noteCaseId);
+        const specificCase = await db.prepare(`SELECT id FROM recovery_cases WHERE id = ? AND status IN ('open', 'in_progress')`).get(noteCaseId);
         if (specificCase) targetCases.push(specificCase);
       }
 
-      if (targetCases.length === 0 && customerId) {
-        targetCases = db.prepare(`
+      // A customer may have multiple active recoveries.  A successful payment
+      // can settle only its linked original payment (or an explicitly noted
+      // payment-link case), never every open case for the customer.
+      if (targetCases.length === 0 && paymentId) {
+        targetCases = await db.prepare(`
           SELECT id FROM recovery_cases 
-          WHERE customer_id = ? AND status IN ('open', 'in_progress')
+          WHERE payment_id = ? AND status IN ('open', 'in_progress')
           ORDER BY opened_at DESC
-        `).all(customerId);
+        `).all(paymentId);
       }
 
-      for (const c of targetCases) {
+      for (const c of (targetCases || [])) {
         await processRecoveryOutcome(c.id, {
           success: true,
           providerPaymentId: paymentEntity?.id || paymentId,
@@ -238,23 +241,23 @@ export async function POST(request) {
       }
 
       if (event === 'subscription.charged' && paymentEntity?.subscription_id) {
-        db.prepare(`UPDATE subscriptions SET status = 'active', updated_at = datetime('now') WHERE id = ?`).run(paymentEntity.subscription_id);
+        await db.prepare(`UPDATE subscriptions SET status = 'active', updated_at = datetime('now') WHERE id = ?`).run(paymentEntity.subscription_id);
       }
 
-      auditLog({
+      await auditLog({
         entityType: 'webhook',
         entityId: paymentId || 'captured_payment',
         eventType: 'payment_success_webhook',
         actor: 'razorpay',
         description: `Razorpay payment recovered: ₹${(amount / 100).toFixed(0)}`,
-        details: { event, amount, customerId, resolvedCases: targetCases.map(c => c.id) },
+        details: { event, amount, customerId, resolvedCases: (targetCases || []).map(c => c.id) },
         amount
       });
     }
 
     // Persist event into events table with idempotency key
     const eventRecordId = uuidv4();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO events (id, event_type, customer_id, payment_id, source, amount, metadata, idempotency_key, processed, created_at)
       VALUES (?, ?, ?, ?, 'razorpay_webhook', ?, ?, ?, 1, datetime('now'))
     `).run(

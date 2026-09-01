@@ -10,8 +10,8 @@ export async function GET(request) {
     const actor = searchParams.get('actor')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
-    const limit = parseInt(searchParams.get('limit') || '100', 10)
-    const offset = parseInt(searchParams.get('offset') || '0', 10)
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '100', 10) || 100))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     let query = `SELECT * FROM audit_log WHERE 1=1`
     let countQuery = `SELECT COUNT(*) as count FROM audit_log WHERE 1=1`
@@ -51,8 +51,8 @@ export async function GET(request) {
     query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
     
     const db = getDb()
-    const entries = db.prepare(query).all(...params, limit, offset)
-    const totalRow = db.prepare(countQuery).get(...params.slice(0, params.length))
+    const entries = await db.prepare(query).all(...params, limit, offset)
+    const totalRow = await db.prepare(countQuery).get(...params)
 
     return NextResponse.json({
       entries,

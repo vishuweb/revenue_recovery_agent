@@ -15,14 +15,17 @@ export async function POST(request) {
       amount
     } = body;
 
-    if (!razorpay_payment_id) {
-      return NextResponse.json({ error: 'razorpay_payment_id is required' }, { status: 400 });
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return NextResponse.json({ error: 'razorpay_order_id, razorpay_payment_id, and razorpay_signature are required' }, { status: 400 });
     }
 
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-    // Verify signature if secret is configured
-    if (keySecret && razorpay_order_id && razorpay_signature) {
+    if (!keySecret) {
+      return NextResponse.json({ error: 'Payment verification is unavailable until Razorpay is configured' }, { status: 503 });
+    }
+
+    {
       const isValid = RazorpayProvider.verifyPaymentSignature({
         razorpay_order_id,
         razorpay_payment_id,
@@ -30,7 +33,7 @@ export async function POST(request) {
       }, keySecret);
 
       if (!isValid) {
-        auditLog({
+        await auditLog({
           entityType: 'payment',
           entityId: razorpay_payment_id,
           eventType: 'razorpay_signature_verification_failed',
@@ -43,10 +46,19 @@ export async function POST(request) {
     }
 
     const db = getDb();
-    const effectiveAmount = amount || 50000;
+    const caseRecord = caseId ? await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId) : null;
+    if (caseId && !caseRecord) return NextResponse.json({ error: 'Case not found' }, { status: 404 });
+    const effectiveCustomerId = caseRecord?.customer_id || customerId;
+    if (!effectiveCustomerId) return NextResponse.json({ error: 'customerId or caseId is required' }, { status: 400 });
+    const customer = await db.prepare('SELECT id FROM customers WHERE id = ?').get(effectiveCustomerId);
+    if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+    const effectiveAmount = caseRecord?.amount_at_risk ?? amount;
+    if (!Number.isSafeInteger(effectiveAmount) || effectiveAmount <= 0 || (amount != null && caseRecord && amount !== caseRecord.amount_at_risk)) {
+      return NextResponse.json({ error: 'A valid amount matching the recovery case is required' }, { status: 400 });
+    }
 
     // Record or update payment record
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO payments (
         id, customer_id, amount, status, method, provider_payment_id, attempted_at, created_at
       ) VALUES (?, ?, ?, 'success', 'card', ?, datetime('now'), datetime('now'))
@@ -56,14 +68,13 @@ export async function POST(request) {
         attempted_at = excluded.attempted_at
     `).run(
       razorpay_payment_id,
-      customerId || 'direct_customer',
+      effectiveCustomerId,
       effectiveAmount,
       razorpay_payment_id
     );
 
     // If linked to a recovery case, resolve it
     if (caseId) {
-      const caseRecord = db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
       if (caseRecord && caseRecord.status !== 'recovered') {
         await processRecoveryOutcome(caseId, {
           success: true,
@@ -73,7 +84,7 @@ export async function POST(request) {
       }
     }
 
-    auditLog({
+    await auditLog({
       entityType: 'payment',
       entityId: razorpay_payment_id,
       eventType: 'razorpay_payment_verified',

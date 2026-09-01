@@ -10,8 +10,8 @@ export async function GET(request) {
     const search = searchParams.get('search')
     const sortBy = searchParams.get('sortBy') || 'opened_at'
     const order = (searchParams.get('order') || 'desc').toUpperCase()
-    const limit = parseInt(searchParams.get('limit') || '50', 10)
-    const offset = parseInt(searchParams.get('offset') || '0', 10)
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     let query = `SELECT rc.*, c.name, c.email, c.company FROM recovery_cases rc JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
     let countQuery = `SELECT COUNT(*) as count FROM recovery_cases rc JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
@@ -23,9 +23,15 @@ export async function GET(request) {
       params.push(status)
     }
     if (priority) {
-      query += ` AND rc.priority = ?`
-      countQuery += ` AND rc.priority = ?`
-      params.push(priority)
+      const thresholds = { high: 70, medium: 40, low: 0 }
+      if (!(priority in thresholds)) return NextResponse.json({ error: 'priority must be high, medium, or low' }, { status: 400 })
+      if (priority === 'high') {
+        query += ` AND rc.priority_score >= 70`; countQuery += ` AND rc.priority_score >= 70`
+      } else if (priority === 'medium') {
+        query += ` AND rc.priority_score >= 40 AND rc.priority_score < 70`; countQuery += ` AND rc.priority_score >= 40 AND rc.priority_score < 70`
+      } else {
+        query += ` AND rc.priority_score < 40`; countQuery += ` AND rc.priority_score < 40`
+      }
     }
     if (search) {
       query += ` AND c.name LIKE ?`
@@ -40,12 +46,12 @@ export async function GET(request) {
     query += ` ORDER BY rc.${sortField} ${sortOrder} LIMIT ? OFFSET ?`
     
     const db = getDb()
-    const cases = db.prepare(query).all(...params, limit, offset)
-    const totalRow = db.prepare(countQuery).get(...params.slice(0, params.length))
+    const cases = await db.prepare(query).all(...params, limit, offset)
+    const totalRow = await db.prepare(countQuery).get(...params.slice(0, params.length))
 
     return NextResponse.json({
-      cases,
-      total: totalRow.count,
+      cases: cases || [],
+      total: totalRow?.count || 0,
       limit,
       offset
     })

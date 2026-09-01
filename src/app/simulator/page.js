@@ -67,6 +67,30 @@ export default function SimulatorPage() {
 
       setLastResult(orderData);
 
+      // If not live checkout (no keys configured), handle simulated payment seamlessly
+      if (!orderData.isLiveCheckout || !orderData.keyId || orderData.keyId.includes('mock')) {
+        toast.info('Simulating Checkout in Sandbox Mode (Add RAZORPAY_KEY_ID in .env.local for live modal)...');
+        const verifyRes = await fetch('/api/razorpay/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.orderId,
+            razorpay_payment_id: `pay_sim_${Date.now()}`,
+            razorpay_signature: 'sim_sig',
+            amount: amountInRupees * 100
+          })
+        });
+        const verifyData = await verifyRes.json();
+        setLastResult({
+          mode: 'simulated_sandbox',
+          order: orderData,
+          settlement: verifyData,
+          instructions: 'To test the live Razorpay Checkout popup, add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env.local'
+        });
+        toast.success(`Simulated payment of ₹${amountInRupees} verified and settled!`);
+        return;
+      }
+
       const loadScript = (src) => {
         return new Promise((resolve) => {
           if (document.querySelector(`script[src="${src}"]`)) {
@@ -83,20 +107,7 @@ export default function SimulatorPage() {
 
       const scriptLoaded = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
       if (!scriptLoaded || typeof window.Razorpay === 'undefined') {
-        toast.warning('Razorpay Checkout script not reachable. Simulated verify dispatched.');
-        const verifyRes = await fetch('/api/razorpay/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            razorpay_order_id: orderData.orderId,
-            razorpay_payment_id: `pay_sim_${Date.now()}`,
-            razorpay_signature: 'sim_sig',
-            amount: amountInRupees * 100
-          })
-        });
-        const verifyData = await verifyRes.json();
-        setLastResult(verifyData);
-        toast.success('Simulated checkout settlement recorded!');
+        toast.warning('Razorpay Checkout SDK not reachable.');
         return;
       }
 

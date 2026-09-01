@@ -13,13 +13,13 @@ export async function POST(request) {
 
     const db = getDb();
     
-    const customer = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(customer_id);
+    const customer = await db.prepare(`SELECT * FROM customers WHERE id = ?`).get(customer_id);
     if (!customer) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
     }
 
     const eventId = uuidv4();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO events (id, event_type, customer_id, source, amount, metadata, processed, created_at)
       VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))
     `).run(eventId, event_type, customer_id, source || 'api', amount || 0, metadata ? JSON.stringify(metadata) : null);
@@ -30,7 +30,7 @@ export async function POST(request) {
       caseResult = await processEvent(eventId);
     }
 
-    const eventRecord = db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
+    const eventRecord = await db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId);
 
     return NextResponse.json({ success: true, event: eventRecord, case: caseResult });
   } catch (error) {
@@ -45,8 +45,8 @@ export async function GET(request) {
     const event_type = searchParams.get('event_type');
     const customer_id = searchParams.get('customer_id');
     const processed = searchParams.get('processed');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0);
 
     const db = getDb();
     
@@ -69,9 +69,9 @@ export async function GET(request) {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
-    const events = db.prepare(query).all(...params);
+    const events = await db.prepare(query).all(...params);
 
-    return NextResponse.json({ events });
+    return NextResponse.json({ events: events || [] });
   } catch (error) {
     console.error('Events GET Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

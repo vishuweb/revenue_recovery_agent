@@ -6,7 +6,7 @@ export async function GET(request, { params }) {
     const { id } = await params;
     const db = getDb();
 
-    const run = db.prepare('SELECT * FROM dataset_runs WHERE id = ?').get(id);
+    const run = await db.prepare('SELECT * FROM dataset_runs WHERE id = ?').get(id);
     if (!run) {
       return NextResponse.json({ error: 'Dataset run not found' }, { status: 404 });
     }
