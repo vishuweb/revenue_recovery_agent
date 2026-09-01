@@ -1,13 +1,17 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { PgDatabase } from './pg-adapter.js';
 
+// ESM-compatible require for loading native CJS modules like better-sqlite3
+const _require = createRequire(import.meta.url);
+
 // Auto-load .env.local if present in dev/node execution
-if (fs.existsSync(path.join(process.cwd(), '.env.local'))) {
-  try {
-    const envContent = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8');
+try {
+  const envPath = path.join(process.cwd(), '.env.local');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
     for (const line of envContent.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
@@ -23,14 +27,41 @@ if (fs.existsSync(path.join(process.cwd(), '.env.local'))) {
         }
       }
     }
-  } catch {
-    // Ignore error reading env
   }
+} catch {
+  // Ignore error reading env
+}
+
+/**
+ * No-op stub database — used when neither DATABASE_URL nor better-sqlite3 is available.
+ * Returns empty results for all queries so the UI loads in a degraded-but-functional state
+ * with a clear "Setup Required" message prompting the user to configure DATABASE_URL.
+ */
+function createNoOpDb() {
+  const noop = () => ({
+    all: () => [],
+    get: () => undefined,
+    run: () => ({ changes: 0 })
+  });
+  return {
+    isPostgres: false,
+    isNoOp: true,
+    prepare: noop,
+    exec: () => {},
+    pragma: () => {},
+    transaction: (fn) => async (...args) => {
+      const txDb = { prepare: noop, exec: () => {}, pragma: () => {} };
+      return fn(txDb, ...args);
+    },
+  };
 }
 
 /**
  * Get the singleton database instance.
- * Returns PgDatabase if DATABASE_URL is set, otherwise an async-compatible SQLite adapter.
+ * Priority:
+ *  1. PostgreSQL via DATABASE_URL env var (required on Vercel)
+ *  2. SQLite via better-sqlite3 (local dev only)
+ *  3. No-op stub (Vercel / read-only serverless without DATABASE_URL set)
  */
 export function getDb() {
   if (globalThis.__revenueRecoveryDb) {
@@ -45,71 +76,82 @@ export function getDb() {
     return pgDb;
   }
 
-  // SQLite fallback
-  const dbPath = path.join(process.cwd(), 'data', 'revenue_recovery.db');
-  const dataDir = path.dirname(dbPath);
+  // Try SQLite — works locally, fails on Vercel (native module, read-only fs)
+  try {
+    const Database = _require('better-sqlite3');
 
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+    const dbPath = path.join(process.cwd(), 'data', 'revenue_recovery.db');
+    const dataDir = path.dirname(dbPath);
 
-  const rawDb = new Database(dbPath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
 
-  // Performance pragmas
-  rawDb.pragma('journal_mode = WAL');
-  rawDb.pragma('foreign_keys = ON');
-  rawDb.pragma('busy_timeout = 5000');
+    const rawDb = new Database(dbPath);
 
-  // Apply schema and migrations
-  applySchemaAndMigrations(rawDb);
+    // Performance pragmas
+    rawDb.pragma('journal_mode = WAL');
+    rawDb.pragma('foreign_keys = ON');
+    rawDb.pragma('busy_timeout = 5000');
 
-  const sqliteAdapter = {
-    isPostgres: false,
-    prepare(sql) {
-      const stmt = rawDb.prepare(sql);
-      return {
-        all(...args) {
-          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-          return stmt.all(...params);
-        },
-        get(...args) {
-          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-          return stmt.get(...params);
-        },
-        run(...args) {
-          const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-          return stmt.run(...params);
-        }
-      };
-    },
-    exec(sql) {
-      return rawDb.exec(sql);
-    },
-    pragma(str) {
-      return rawDb.pragma(str);
-    },
-    transaction(fn) {
-      return async (...args) => {
-        rawDb.exec('BEGIN');
-        try {
-          const res = await fn(sqliteAdapter, ...args);
-          rawDb.exec('COMMIT');
-          return res;
-        } catch (err) {
-          try {
-            rawDb.exec('ROLLBACK');
-          } catch {
-            // ignore rollback error
+    // Apply schema and migrations
+    applySchemaAndMigrations(rawDb);
+
+    const sqliteAdapter = {
+      isPostgres: false,
+      isNoOp: false,
+      prepare(sql) {
+        const stmt = rawDb.prepare(sql);
+        return {
+          all(...args) {
+            const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+            return stmt.all(...params);
+          },
+          get(...args) {
+            const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+            return stmt.get(...params);
+          },
+          run(...args) {
+            const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+            return stmt.run(...params);
           }
-          throw err;
-        }
-      };
-    },
-    rawDb
-  };
+        };
+      },
+      exec(sql) {
+        return rawDb.exec(sql);
+      },
+      pragma(str) {
+        return rawDb.pragma(str);
+      },
+      transaction(fn) {
+        return async (...args) => {
+          rawDb.exec('BEGIN');
+          try {
+            const res = await fn(sqliteAdapter, ...args);
+            rawDb.exec('COMMIT');
+            return res;
+          } catch (err) {
+            try {
+              rawDb.exec('ROLLBACK');
+            } catch {
+              // ignore rollback error
+            }
+            throw err;
+          }
+        };
+      },
+      rawDb
+    };
 
-  globalThis.__revenueRecoveryDb = sqliteAdapter;
-  return sqliteAdapter;
+    globalThis.__revenueRecoveryDb = sqliteAdapter;
+    return sqliteAdapter;
+  } catch (err) {
+    // better-sqlite3 native binary not available (e.g. Vercel serverless, Docker without build tools)
+    console.warn('[db] SQLite unavailable:', err.message, '— running in no-op mode. Set DATABASE_URL to enable persistent storage.');
+    const stub = createNoOpDb();
+    globalThis.__revenueRecoveryDb = stub;
+    return stub;
+  }
 }
 
 function applySchemaAndMigrations(db) {
@@ -146,6 +188,10 @@ function applySchemaAndMigrations(db) {
  */
 export async function resetDatabase() {
   const db = getDb();
+
+  if (db.isNoOp) {
+    throw new Error('No database configured. Add DATABASE_URL (PostgreSQL/Supabase connection string) to your Vercel environment variables and redeploy.');
+  }
 
   if (db.isPostgres) {
     await db.exec(`
@@ -192,6 +238,8 @@ export async function resetDatabase() {
  */
 export async function auditLog(entry) {
   const db = getDb();
+  if (db.isNoOp) return null; // Skip logging when no DB is configured
+  
   const id = uuidv4();
   const detailsStr = typeof entry.details === 'string' ? entry.details : (entry.details ? JSON.stringify(entry.details) : null);
   const actor = entry.actor || 'system';
