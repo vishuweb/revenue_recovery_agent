@@ -55,8 +55,8 @@ export async function GET(request) {
     const totalRow = await db.prepare(countQuery).get(...params)
 
     return NextResponse.json({
-      entries,
-      total: totalRow.count,
+      entries: entries || [],
+      total: totalRow?.count || 0,
       limit,
       offset
     })
