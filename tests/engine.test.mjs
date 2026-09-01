@@ -15,6 +15,8 @@ import { parseCSV, autoMapColumns } from '../src/lib/dataset/parser.js';
 import { translateSqlToPg } from '../src/lib/db/pg-adapter.js';
 import { RazorpayProvider } from '../src/lib/providers/razorpay.js';
 import { POST as webhookPost } from '../src/app/api/webhooks/route.js';
+import { GET as casesGet } from '../src/app/api/cases/route.js';
+import { GET as dashboardGet } from '../src/app/api/dashboard/route.js';
 import crypto from 'crypto';
 
 describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
@@ -354,5 +356,113 @@ describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
     const data2 = await res2.json();
     assert.equal(data2.received, true);
     assert.equal(data2.duplicate, true);
+  });
+
+  test('16. Full End-to-End Trace: payment.failed -> case creation -> execute recovery action -> settlement -> DB persistence -> cases API -> dashboard recentCases', async () => {
+    const db = getDb();
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_test_secret_webhook';
+    const payId = `pay_e2e_${Date.now()}`;
+    const eventId = `evt_e2e_${Date.now()}`;
+
+    // 1. Send payment.failed webhook
+    const rawBodyFailed = JSON.stringify({
+      event: 'payment.failed',
+      event_id: eventId,
+      payload: {
+        payment: {
+          entity: {
+            id: payId,
+            amount: 74900,
+            currency: 'INR',
+            status: 'failed',
+            error_reason: 'insufficient_funds',
+            email: 'e2e_user@example.com',
+            notes: { customer_name: 'E2E Test Enterprise' }
+          }
+        }
+      }
+    });
+
+    const sigFailed = crypto.createHmac('sha256', secret).update(rawBodyFailed).digest('hex');
+    const webhookRes = await webhookPost(new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': sigFailed,
+        'x-razorpay-event-id': eventId
+      },
+      body: rawBodyFailed
+    }));
+
+    assert.equal(webhookRes.status, 200);
+    const webhookJson = await webhookRes.json();
+    assert.equal(webhookJson.received, true);
+    assert.ok(webhookJson.caseId, 'caseId should be returned');
+    const createdCaseId = webhookJson.caseId;
+
+    // 2. Verify Case exists in database
+    const dbCase = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(createdCaseId);
+    assert.ok(dbCase, 'Case must exist in database');
+    assert.equal(dbCase.amount_at_risk, 74900);
+    assert.equal(dbCase.failure_category, 'temporary');
+    assert.equal(dbCase.status, 'open');
+
+    // 3. Verify cases API returns the created case
+    const casesApiRes = await casesGet(new Request(`http://localhost:3000/api/cases?search=${createdCaseId}`));
+    assert.equal(casesApiRes.status, 200);
+    const casesApiJson = await casesApiRes.json();
+    assert.ok(casesApiJson.cases.length >= 1);
+    assert.equal(casesApiJson.cases[0].id, createdCaseId);
+    assert.equal(casesApiJson.cases[0].name, 'E2E Test Enterprise');
+
+    // 4. Verify Dashboard API returns the created case in recentCases
+    const dashResBefore = await dashboardGet(new Request('http://localhost:3000/api/dashboard'));
+    assert.equal(dashResBefore.status, 200);
+    const dashJsonBefore = await dashResBefore.json();
+    const foundInDashBefore = dashJsonBefore.recentCases.find(c => c.id === createdCaseId);
+    assert.ok(foundInDashBefore, 'Case must appear in dashboard recentCases');
+    assert.equal(foundInDashBefore.customer_name, 'E2E Test Enterprise');
+
+    // 5. Simulate payment.captured webhook settling the case
+    const rawBodyCaptured = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: payId,
+            amount: 74900,
+            currency: 'INR',
+            status: 'captured',
+            notes: { caseId: createdCaseId }
+          }
+        }
+      }
+    });
+
+    const sigCaptured = crypto.createHmac('sha256', secret).update(rawBodyCaptured).digest('hex');
+    const settleRes = await webhookPost(new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': sigCaptured,
+        'x-razorpay-event-id': `evt_cap_${Date.now()}`
+      },
+      body: rawBodyCaptured
+    }));
+    assert.equal(settleRes.status, 200);
+
+    // 6. Verify case status is recovered in DB
+    const settledCase = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(createdCaseId);
+    assert.equal(settledCase.status, 'recovered');
+    assert.equal(settledCase.recovered_amount, 74900);
+
+    // 7. Verify Dashboard API reflects the recovered case and updated metrics
+    const dashResAfter = await dashboardGet(new Request('http://localhost:3000/api/dashboard'));
+    assert.equal(dashResAfter.status, 200);
+    const dashJsonAfter = await dashResAfter.json();
+    assert.ok(dashJsonAfter.revenueRecovered >= 74900);
+    const foundInDashAfter = dashJsonAfter.recentCases.find(c => c.id === createdCaseId);
+    assert.ok(foundInDashAfter);
+    assert.equal(foundInDashAfter.status, 'recovered');
   });
 });

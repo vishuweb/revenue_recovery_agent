@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -61,7 +61,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboard();
-    const interval = setInterval(fetchDashboard, 20000);
+    const interval = setInterval(fetchDashboard, 10000);
     return () => clearInterval(interval);
   }, []);
 

@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db/database'
-import { processFailedPayment } from '@/lib/engine/orchestrator'
+import { NextResponse } from 'next/server.js';
+import { getDb } from '../../../lib/db/database.js';
+import { processFailedPayment } from '../../../lib/engine/orchestrator.js';
 
 export async function GET(request) {
   try {
@@ -13,8 +13,8 @@ export async function GET(request) {
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
     const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
-    let query = `SELECT rc.*, c.name, c.email, c.company FROM recovery_cases rc JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
-    let countQuery = `SELECT COUNT(*) as count FROM recovery_cases rc JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
+    let query = `SELECT rc.*, COALESCE(c.name, 'Customer ' || SUBSTR(rc.customer_id, 1, 8)) as name, c.email, c.company FROM recovery_cases rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
+    let countQuery = `SELECT COUNT(*) as count FROM recovery_cases rc LEFT JOIN customers c ON rc.customer_id = c.id WHERE 1=1`
     const params = []
 
     if (status) {

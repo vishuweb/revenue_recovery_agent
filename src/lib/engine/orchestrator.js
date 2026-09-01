@@ -23,12 +23,40 @@ export async function processFailedPayment(paymentId) {
   // Idempotency: check if case already exists for this payment
   const existingCase = await db.prepare('SELECT id FROM recovery_cases WHERE payment_id = ?').get(paymentId);
   if (existingCase) {
-    logDecision(existingCase.id, 'idempotency_skip', { key: paymentId, reason: 'Recovery case already exists' });
+    await logDecision(existingCase.id, 'idempotency_skip', { key: paymentId, reason: 'Recovery case already exists' });
     return { caseId: existingCase.id, actionId: null, decision: null, skipped: true };
   }
   
-  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(payment.customer_id);
-  if (!customer) throw new Error('Customer not found');
+  let customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(payment.customer_id);
+  if (!customer) {
+    // Auto-create customer record if not present so recovery pipeline never halts
+    const now = new Date().toISOString();
+    customer = {
+      id: payment.customer_id || `cust_${uuidv4().substring(0, 8)}`,
+      name: 'Direct Customer',
+      email: `${payment.customer_id || 'customer'}@example.com`,
+      plan: 'starter',
+      mrr: payment.amount || 50000,
+      lifetime_value: (payment.amount || 50000) * 3,
+      payment_method: payment.method || 'card',
+      risk_score: 0.3,
+      total_payments: 1,
+      successful_payments: 1,
+      failed_payments: 0,
+      discount_affinity: 0.5,
+      avg_order_value: payment.amount || 50000,
+      opted_out: 0,
+      intervention_count: 0
+    };
+    await db.prepare(`
+      INSERT INTO customers (
+        id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
+        risk_score, total_payments, successful_payments, failed_payments,
+        discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
+      ) VALUES (?, ?, ?, null, 'Direct Account', 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
+    `).run(customer.id, customer.name, customer.email, customer.mrr, customer.lifetime_value, customer.payment_method, customer.avg_order_value, now, now);
+  }
 
   const classification = classifyFailure(payment.failure_reason, payment.failure_source);
   
@@ -52,7 +80,7 @@ export async function processFailedPayment(paymentId) {
     decision = decideAction(caseData, customer, classification, prediction, priority);
   } catch (err) {
     decision = deterministicFallback(caseData, customer, classification);
-    logDecision(paymentId, 'ai_fallback', { reason: err.message });
+    await logDecision(paymentId, 'ai_fallback', { reason: err.message });
   }
 
   // Wrap in transaction for atomicity
@@ -131,12 +159,39 @@ export async function processEvent(eventId) {
   
   // Idempotency: skip if already processed
   if (event.processed === 1) {
-    logDecision(eventId, 'idempotency_skip', { key: eventId, reason: 'Event already processed' });
+    await logDecision(eventId, 'idempotency_skip', { key: eventId, reason: 'Event already processed' });
     return { caseId: null, actionId: null, decision: null, skipped: true };
   }
 
-  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(event.customer_id);
-  if (!customer) throw new Error('Customer not found');
+  let customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(event.customer_id);
+  if (!customer) {
+    const now = new Date().toISOString();
+    customer = {
+      id: event.customer_id || `cust_${uuidv4().substring(0, 8)}`,
+      name: 'Direct Customer',
+      email: `${event.customer_id || 'customer'}@example.com`,
+      plan: 'starter',
+      mrr: event.amount || 50000,
+      lifetime_value: (event.amount || 50000) * 3,
+      payment_method: 'card',
+      risk_score: 0.3,
+      total_payments: 1,
+      successful_payments: 1,
+      failed_payments: 0,
+      discount_affinity: 0.5,
+      avg_order_value: event.amount || 50000,
+      opted_out: 0,
+      intervention_count: 0
+    };
+    await db.prepare(`
+      INSERT INTO customers (
+        id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
+        risk_score, total_payments, successful_payments, failed_payments,
+        discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
+      ) VALUES (?, ?, ?, null, 'Direct Account', 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
+    `).run(customer.id, customer.name, customer.email, customer.mrr, customer.lifetime_value, customer.payment_method, customer.avg_order_value, now, now);
+  }
 
   const metadata = event.metadata ? JSON.parse(event.metadata) : {};
   const classification = classifyEvent(event.event_type, metadata);
@@ -162,7 +217,7 @@ export async function processEvent(eventId) {
     decision = decideAction(caseData, customer, classification, prediction, priority);
   } catch (err) {
     decision = deterministicFallback(caseData, customer, classification);
-    logDecision(eventId, 'ai_fallback', { reason: err.message });
+    await logDecision(eventId, 'ai_fallback', { reason: err.message });
   }
 
   const caseId = uuidv4();

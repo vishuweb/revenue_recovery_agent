@@ -4,6 +4,18 @@ import { processFailedPayment, processRecoveryOutcome } from '../../../lib/engin
 import { RazorpayProvider } from '../../../lib/providers/razorpay.js';
 import { v4 as uuidv4 } from 'uuid';
 
+function logWebhookDiagnostic({ caseId, event, operation, status, details = {} }) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event: event || 'unknown',
+    caseId: caseId || null,
+    operation,
+    status,
+    ...details
+  };
+  console.log('[recovery-pipeline]', JSON.stringify(entry));
+}
+
 export async function POST(request) {
   try {
     const rawBody = await request.text();
@@ -18,6 +30,7 @@ export async function POST(request) {
 
     if (webhookSecret) {
       if (!signature) {
+        logWebhookDiagnostic({ operation: 'verify_signature', status: 'failed_missing_signature' });
         await auditLog({
           entityType: 'webhook',
           entityId: 'security',
@@ -31,6 +44,7 @@ export async function POST(request) {
 
       const isValid = RazorpayProvider.verifyWebhookSignature(rawBody, signature, webhookSecret);
       if (!isValid) {
+        logWebhookDiagnostic({ operation: 'verify_signature', status: 'failed_invalid_signature' });
         await auditLog({
           entityType: 'webhook',
           entityId: 'security',
@@ -41,6 +55,7 @@ export async function POST(request) {
         });
         return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 400 });
       }
+      logWebhookDiagnostic({ operation: 'verify_signature', status: 'success' });
     }
 
     let data;
@@ -146,10 +161,23 @@ export async function POST(request) {
 
     let triggeredCaseId = null;
 
+    logWebhookDiagnostic({
+      event,
+      operation: 'webhook_received',
+      status: 'processing',
+      details: { paymentId, razorpayEventId, idempotencyKey }
+    });
+
     if (event === 'payment.failed') {
       const existingPayment = paymentId ? (await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId)) : null;
 
       if (existingPayment && existingPayment.status === 'success') {
+        logWebhookDiagnostic({
+          event,
+          operation: 'handle_payment_failed',
+          status: 'ignored_out_of_order',
+          details: { paymentId, existingStatus: existingPayment.status }
+        });
         await auditLog({
           entityType: 'webhook',
           entityId: paymentId,
@@ -178,8 +206,23 @@ export async function POST(request) {
           paymentEntity?.id || null
         );
 
+        logWebhookDiagnostic({
+          event,
+          operation: 'upsert_payment',
+          status: 'success',
+          details: { paymentId, amount, failureReason }
+        });
+
         const result = await processFailedPayment(paymentId);
         triggeredCaseId = result.caseId;
+
+        logWebhookDiagnostic({
+          caseId: triggeredCaseId,
+          event,
+          operation: 'process_recovery_pipeline',
+          status: result.skipped ? 'skipped_idempotent' : 'case_created',
+          details: { paymentId, action: result.decision?.action || null }
+        });
 
         await auditLog({
           entityType: 'webhook',
@@ -207,6 +250,12 @@ export async function POST(request) {
         paymentEntity?.invoice_id || null, amount,
         paymentEntity?.method || 'card', paymentEntity?.id || paymentId
       );
+      logWebhookDiagnostic({
+        event,
+        operation: 'upsert_payment_authorized',
+        status: 'success',
+        details: { paymentId, amount, customerId }
+      });
       await auditLog({
         entityType: 'webhook', entityId: paymentId, eventType: 'payment_authorized_webhook', actor: 'razorpay',
         description: 'Razorpay payment authorized; awaiting capture before recovery settlement',
@@ -244,7 +293,7 @@ export async function POST(request) {
         if (specificCase) targetCases.push(specificCase);
       }
 
-      // A customer may have multiple active recoveries.  A successful payment
+      // A customer may have multiple active recoveries. A successful payment
       // can settle only its linked original payment (or an explicitly noted
       // payment-link case), never every open case for the customer.
       if (targetCases.length === 0 && paymentId) {
@@ -262,6 +311,13 @@ export async function POST(request) {
           amount
         });
         triggeredCaseId = c.id;
+        logWebhookDiagnostic({
+          caseId: c.id,
+          event,
+          operation: 'settle_recovery_case',
+          status: 'recovered',
+          details: { paymentId, amount }
+        });
       }
 
       if (event === 'subscription.charged' && paymentEntity?.subscription_id) {
@@ -293,6 +349,14 @@ export async function POST(request) {
       JSON.stringify({ event, payload }),
       idempotencyKey
     );
+
+    logWebhookDiagnostic({
+      caseId: triggeredCaseId,
+      event,
+      operation: 'persist_event',
+      status: 'completed',
+      details: { paymentId, idempotencyKey }
+    });
 
     return NextResponse.json({
       received: true,

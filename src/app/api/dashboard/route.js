@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db/database'
-import { estimateNaiveBaseline } from '@/lib/engine/attribution'
+import { NextResponse } from 'next/server.js';
+import { getDb } from '../../../lib/db/database.js';
+import { estimateNaiveBaseline } from '../../../lib/engine/attribution.js';
 
 export async function GET() {
   try {
@@ -30,9 +30,9 @@ export async function GET() {
     `).all()
 
     const recentCases = await db.prepare(`
-      SELECT rc.*, c.name as customer_name 
+      SELECT rc.*, COALESCE(c.name, 'Customer ' || SUBSTR(rc.customer_id, 1, 8)) as customer_name, c.email, c.company 
       FROM recovery_cases rc
-      JOIN customers c ON rc.customer_id = c.id
+      LEFT JOIN customers c ON rc.customer_id = c.id
       ORDER BY rc.opened_at DESC
       LIMIT 10
     `).all()
@@ -70,9 +70,9 @@ export async function GET() {
     `).all()
 
     const recoveryBySegment = await db.prepare(`
-      SELECT c.plan, COUNT(*) as count, SUM(rc.amount_at_risk) as atRisk, SUM(rc.recovered_amount) as recovered 
+      SELECT COALESCE(c.plan, 'starter') as plan, COUNT(*) as count, SUM(rc.amount_at_risk) as atRisk, SUM(rc.recovered_amount) as recovered 
       FROM recovery_cases rc 
-      JOIN customers c ON rc.customer_id = c.id 
+      LEFT JOIN customers c ON rc.customer_id = c.id 
       GROUP BY c.plan
     `).all()
 
