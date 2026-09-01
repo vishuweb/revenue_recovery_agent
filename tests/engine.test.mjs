@@ -13,6 +13,9 @@ import { classifyAttribution, estimateNaiveBaseline } from '../src/lib/engine/at
 import { processFailedPayment, processEvent, executeRecoveryAction, processRecoveryOutcome } from '../src/lib/engine/orchestrator.js';
 import { parseCSV, autoMapColumns } from '../src/lib/dataset/parser.js';
 import { translateSqlToPg } from '../src/lib/db/pg-adapter.js';
+import { RazorpayProvider } from '../src/lib/providers/razorpay.js';
+import { POST as webhookPost } from '../src/app/api/webhooks/route.js';
+import crypto from 'crypto';
 
 describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
   before(async () => {
@@ -158,5 +161,198 @@ describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
     assert.match(sql, /INTERVAL '30 days'/);
     assert.match(sql, /case_id = \$1/);
     assert.doesNotMatch(sql, /INTERVAL '\$1 days'/);
+  });
+
+  test('11. Razorpay HMAC SHA256 Webhook Signature Validation', () => {
+    const secret = 'whsec_test_secret_12345';
+    const body = JSON.stringify({ event: 'payment.failed', payload: {} });
+    const validSignature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+    const invalidSignature = 'invalid_hex_signature_abc123';
+
+    assert.equal(RazorpayProvider.verifyWebhookSignature(body, validSignature, secret), true);
+    assert.equal(RazorpayProvider.verifyWebhookSignature(body, invalidSignature, secret), false);
+    assert.equal(RazorpayProvider.verifyWebhookSignature(body, '', secret), false);
+  });
+
+  test('12. Production Webhook: payment.failed creates payment, customer, and recovery case', async () => {
+    const secret = 'whsec_test_secret_webhook';
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret;
+
+    const paymentId = `pay_wh_${Date.now()}`;
+    const rawBody = JSON.stringify({
+      event: 'payment.failed',
+      payload: {
+        payment: {
+          entity: {
+            id: paymentId,
+            amount: 499900,
+            currency: 'INR',
+            status: 'failed',
+            error_code: 'card_declined',
+            error_reason: 'insufficient_funds',
+            email: 'webhook.client@example.com',
+            notes: { customer_name: 'Webhook Client Corp' }
+          }
+        }
+      }
+    });
+
+    const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const req = new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': signature,
+        'x-razorpay-event-id': `evt_${Date.now()}_fail`
+      },
+      body: rawBody
+    });
+
+    const res = await webhookPost(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.received, true);
+    assert.ok(data.caseId);
+
+    const db = getDb();
+    const caseRecord = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(data.caseId);
+    assert.ok(caseRecord);
+    assert.equal(caseRecord.amount_at_risk, 499900);
+    assert.equal(caseRecord.status, 'open');
+  });
+
+  test('13. Production Webhook: payment.authorized records authorization without settling case', async () => {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_test_secret_webhook';
+    const paymentId = `pay_auth_${Date.now()}`;
+    const rawBody = JSON.stringify({
+      event: 'payment.authorized',
+      payload: {
+        payment: {
+          entity: {
+            id: paymentId,
+            amount: 199900,
+            currency: 'INR',
+            status: 'authorized',
+            email: 'auth.client@example.com'
+          }
+        }
+      }
+    });
+
+    const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const req = new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': signature,
+        'x-razorpay-event-id': `evt_${Date.now()}_auth`
+      },
+      body: rawBody
+    });
+
+    const res = await webhookPost(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.received, true);
+
+    const db = getDb();
+    const paymentRecord = await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
+    assert.ok(paymentRecord);
+    assert.equal(paymentRecord.status, 'authorized');
+  });
+
+  test('14. Production Webhook: payment.captured settles recovery case', async () => {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_test_secret_webhook';
+    const db = getDb();
+
+    // Create an open case
+    const custId = `cust_cap_${Date.now()}`;
+    const payId = `pay_cap_${Date.now()}`;
+    await db.prepare(`INSERT INTO customers (id, name, email, plan, mrr, lifetime_value) VALUES (?, 'Capture Cust', 'cap@example.com', 'growth', 299900, 1000000)`).run(custId);
+    await db.prepare(`INSERT INTO payments (id, customer_id, amount, status, failure_reason) VALUES (?, ?, 299900, 'failed', 'gateway_error')`).run(payId, custId);
+    const { caseId } = await processFailedPayment(payId);
+
+    const rawBody = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: payId,
+            amount: 299900,
+            currency: 'INR',
+            status: 'captured',
+            notes: { caseId }
+          }
+        }
+      }
+    });
+
+    const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const req = new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': signature,
+        'x-razorpay-event-id': `evt_${Date.now()}_cap`
+      },
+      body: rawBody
+    });
+
+    const res = await webhookPost(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.received, true);
+
+    const updatedCase = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(caseId);
+    assert.equal(updatedCase.status, 'recovered');
+    assert.equal(updatedCase.recovered_amount, 299900);
+  });
+
+  test('15. Production Webhook: x-razorpay-event-id deduplication handles redelivery idempotently', async () => {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_test_secret_webhook';
+    const eventId = `evt_dedup_${Date.now()}`;
+    const payId = `pay_dedup_${Date.now()}`;
+
+    const rawBody = JSON.stringify({
+      event: 'payment.failed',
+      event_id: eventId,
+      payload: {
+        payment: {
+          entity: {
+            id: payId,
+            amount: 99900,
+            currency: 'INR',
+            status: 'failed',
+            error_code: 'card_declined'
+          }
+        }
+      }
+    });
+
+    const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+    const makeReq = () => new Request('http://localhost:3000/api/webhooks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': signature,
+        'x-razorpay-event-id': eventId
+      },
+      body: rawBody
+    });
+
+    // 1st delivery: creates case
+    const res1 = await webhookPost(makeReq());
+    assert.equal(res1.status, 200);
+    const data1 = await res1.json();
+    assert.equal(data1.received, true);
+    assert.equal(data1.duplicate, undefined);
+
+    // 2nd delivery (redelivery of same event ID): skips duplicate processing
+    const res2 = await webhookPost(makeReq());
+    assert.equal(res2.status, 200);
+    const data2 = await res2.json();
+    assert.equal(data2.received, true);
+    assert.equal(data2.duplicate, true);
   });
 });

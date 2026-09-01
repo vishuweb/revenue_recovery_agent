@@ -65,14 +65,18 @@ export async function POST(request) {
     const entityNotes = paymentEntity?.notes || orderEntity?.notes || paymentLinkEntity?.notes || {};
     const noteCaseId = entityNotes.caseId || entityNotes.case_id || null;
     const noteCustomerId = entityNotes.customerId || entityNotes.customer_id || null;
-    const idempotencyKey = `${event}_${paymentId}`;
+
+    // Use x-razorpay-event-id header (or payload event_id) for idempotency deduplication
+    const headerEventId = request.headers.get('x-razorpay-event-id') || request.headers.get('X-Razorpay-Event-Id');
+    const razorpayEventId = headerEventId || event_id || data?.id || null;
+    const idempotencyKey = razorpayEventId ? `rzp_evt_${razorpayEventId}` : `${event}_${paymentId}`;
     const db = getDb();
 
     // Check before creating a fallback customer. Sequential redelivery of an
     // unknown-customer event must not leave orphan customer records behind.
     const existingEvent = await db.prepare('SELECT id FROM events WHERE idempotency_key = ?').get(idempotencyKey);
     if (existingEvent) {
-      return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
+      return NextResponse.json({ received: true, duplicate: true, idempotency_key: idempotencyKey }, { status: 200 });
     }
 
     // Determine customer ID
