@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -54,7 +54,11 @@ export default function CasesPage() {
     const timer = setTimeout(() => {
       fetchCases();
     }, 250);
-    return () => clearTimeout(timer);
+    const interval = setInterval(fetchCases, 10000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchCases]);
 
   const handleOpenAction = (e, c) => {

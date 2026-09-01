@@ -3,9 +3,20 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { PgDatabase } from './pg-adapter.js';
+import { SQLITE_SCHEMA } from './schema.sql.js';
+import { POSTGRES_SCHEMA } from './schema.pg.js';
 
 // ESM-compatible require for loading native CJS modules like better-sqlite3
 const _require = createRequire(import.meta.url);
+
+function getSafeDbHost(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return 'configured database';
+  }
+}
 
 // Auto-load .env.local if present in dev/node execution
 try {
@@ -175,11 +186,7 @@ function applySchemaAndMigrations(db) {
   }
 
   // Initialize schema with latest version
-  const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
-  if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    db.exec(schema);
-  }
+  db.exec(SQLITE_SCHEMA);
 }
 
 /**
@@ -205,11 +212,7 @@ export async function resetDatabase() {
       DROP TABLE IF EXISTS subscriptions CASCADE;
       DROP TABLE IF EXISTS customers CASCADE;
     `);
-    const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.pg.sql');
-    if (fs.existsSync(schemaPath)) {
-      const schema = fs.readFileSync(schemaPath, 'utf-8');
-      await db.exec(schema);
-    }
+    await db.exec(POSTGRES_SCHEMA);
     return;
   }
 

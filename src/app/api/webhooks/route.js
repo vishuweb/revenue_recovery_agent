@@ -92,15 +92,16 @@ export async function POST(request) {
     }
 
     // Auto-create or ensure customer exists if external webhook arrives
+    const now = new Date().toISOString();
     if (!customerId) {
       customerId = `cust_${uuidv4().substring(0, 8)}`;
-      const now = new Date().toISOString();
       await db.prepare(`
         INSERT INTO customers (
           id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
           risk_score, total_payments, successful_payments, failed_payments,
           discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
       `).run(
         customerId,
         paymentEntity?.notes?.customer_name || (customerEmail ? customerEmail.split('@')[0] : 'Test Customer'),
@@ -117,13 +118,13 @@ export async function POST(request) {
     } else {
       const customerExists = await db.prepare('SELECT id FROM customers WHERE id = ?').get(customerId);
       if (!customerExists) {
-        const now = new Date().toISOString();
         await db.prepare(`
           INSERT INTO customers (
             id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
             risk_score, total_payments, successful_payments, failed_payments,
             discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
         `).run(
           customerId,
           paymentEntity?.notes?.customer_name || 'Customer ' + customerId.substring(0, 6),
@@ -141,7 +142,7 @@ export async function POST(request) {
     }
 
     const amount = paymentEntity?.amount || orderEntity?.amount || paymentLinkEntity?.amount || 0;
-    const failureReason = paymentEntity?.error_code || paymentEntity?.error_reason || paymentEntity?.failure_reason || 'payment_failed';
+    const failureReason = paymentEntity?.error_reason || paymentEntity?.error_code || paymentEntity?.failure_reason || 'payment_failed';
 
     let triggeredCaseId = null;
 

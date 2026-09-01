@@ -107,12 +107,12 @@ export async function processFailedPayment(paymentId) {
   }
 
   // Observability
-  logDecision(caseId, 'event_received', { failureReason: payment.failure_reason, amountAtRisk: payment.amount });
-  logDecision(caseId, 'classified', { category: classification.category, baseProbability: classification.baseRecoveryProbability });
-  logDecision(caseId, 'predicted', { probability: prediction.probability, factors: prediction.factors });
-  logDecision(caseId, 'prioritized', { tier: priority.tier, score: priority.score });
-  logDecision(caseId, 'candidates_generated', { candidateCount: (decision.candidates || []).length });
-  logDecision(caseId, 'action_selected', {
+  await logDecision(caseId, 'event_received', { failureReason: payment.failure_reason, amountAtRisk: payment.amount });
+  await logDecision(caseId, 'classified', { category: classification.category, baseProbability: classification.baseRecoveryProbability });
+  await logDecision(caseId, 'predicted', { probability: prediction.probability, factors: prediction.factors });
+  await logDecision(caseId, 'prioritized', { tier: priority.tier, score: priority.score });
+  await logDecision(caseId, 'candidates_generated', { candidateCount: (decision.candidates || []).length });
+  await logDecision(caseId, 'action_selected', {
     action: decision.action, nev, expectedRecovery,
     allNegativeNEV: decision.allNegativeNEV, isAIFallback: decision.isAIFallback,
   }, { amount: payment.amount });
@@ -216,10 +216,10 @@ export async function processEvent(eventId) {
   await insertEventCase();
 
   // Observability
-  logDecision(caseId, 'event_received', { eventType: event.event_type, amountAtRisk: event.amount });
-  logDecision(caseId, 'classified', { category: classification.category, baseProbability: classification.baseRecoveryProbability });
-  logDecision(caseId, 'predicted', { probability: prediction.probability });
-  logDecision(caseId, 'action_selected', { action: decision.action, nev, allNegativeNEV: decision.allNegativeNEV });
+  await logDecision(caseId, 'event_received', { eventType: event.event_type, amountAtRisk: event.amount });
+  await logDecision(caseId, 'classified', { category: classification.category, baseProbability: classification.baseRecoveryProbability });
+  await logDecision(caseId, 'predicted', { probability: prediction.probability });
+  await logDecision(caseId, 'action_selected', { action: decision.action, nev, allNegativeNEV: decision.allNegativeNEV });
 
   return { caseId, actionId, decision };
 }
@@ -260,7 +260,7 @@ export async function executeRecoveryAction(actionId) {
   });
 
   // Log policy check
-  logDecision(caseData.id, guardrailsResult.allowed ? 'policy_checked' : 'policy_rejected', {
+  await logDecision(caseData.id, guardrailsResult.allowed ? 'policy_checked' : 'policy_rejected', {
     allowed: guardrailsResult.allowed,
     violations: guardrailsResult.violations,
     warnings: guardrailsResult.warnings,
@@ -276,7 +276,7 @@ export async function executeRecoveryAction(actionId) {
 
   // Apply policy modifications (e.g., discount clamping)
   if (guardrailsResult.modifications.length > 0) {
-    logDecision(caseData.id, 'policy_modified', {
+    await logDecision(caseData.id, 'policy_modified', {
       modifications: guardrailsResult.modifications,
     });
   }
@@ -311,7 +311,7 @@ export async function executeRecoveryAction(actionId) {
           .run('completed', 'success', JSON.stringify(result), action.id);
         
         await processRecoveryOutcome(caseData.id, result);
-        logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success', paymentId: result.providerPaymentId || null });
+        await logDecision(caseData.id, 'executed', { actionType: 'retry', result: 'success', paymentId: result.providerPaymentId || null });
       } else {
         await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
           .run('failed', 'failed', JSON.stringify(result), action.id);
@@ -319,7 +319,7 @@ export async function executeRecoveryAction(actionId) {
         await db.prepare('UPDATE recovery_cases SET attempts_made = attempts_made + 1, updated_at = ? WHERE id = ?')
           .run(new Date().toISOString(), caseData.id);
 
-        logDecision(caseData.id, 'execution_failed', { actionType: 'retry', error: result.failureReason || 'unknown' });
+        await logDecision(caseData.id, 'execution_failed', { actionType: 'retry', error: result.failureReason || 'unknown' });
 
         // Re-evaluate and schedule next action
         await scheduleNextAction(caseData.id, customer);
@@ -343,7 +343,7 @@ export async function executeRecoveryAction(actionId) {
       );
       await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
-      logDecision(caseData.id, 'executed', { actionType: 'payment_link', result: 'success', paymentUrl: result.url || null });
+      await logDecision(caseData.id, 'executed', { actionType: 'payment_link', result: 'success', paymentUrl: result.url || null });
     } else if (action.action_type === 'no_action') {
       // No_action is explicitly "do nothing" — mark as completed successfully
       result = { msg: 'No action taken — optimal financial decision', success: true };
@@ -353,7 +353,7 @@ export async function executeRecoveryAction(actionId) {
         UPDATE recovery_cases SET status = 'stopped', resolved_at = ?, updated_at = ?
         WHERE id = ? AND status IN ('open', 'in_progress')
       `).run(new Date().toISOString(), new Date().toISOString(), caseData.id);
-      logDecision(caseData.id, 'executed', { actionType: 'no_action', result: 'completed' });
+      await logDecision(caseData.id, 'executed', { actionType: 'no_action', result: 'completed' });
     } else if (['discount', 'free_shipping', 'cart_reminder', 'targeted_campaign'].includes(action.action_type)) {
       result = { msg: `Executed ${action.action_type}`, success: true };
       await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
@@ -365,13 +365,13 @@ export async function executeRecoveryAction(actionId) {
         await db.prepare('UPDATE recovery_cases SET intervention_cost = ? WHERE id = ?')
           .run(interventionCost, caseData.id);
       }
-      logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
+      await logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
     } else {
       // email, sms, escalate, stop
       result = { msg: `Executed ${action.action_type}` };
       await db.prepare('UPDATE recovery_actions SET status = ?, result = ?, result_details = ? WHERE id = ?')
         .run('completed', 'success', JSON.stringify(result), action.id);
-      logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
+      await logDecision(caseData.id, 'executed', { actionType: action.action_type, result: 'success' });
     }
   } catch (err) {
     executionError = err;
@@ -392,12 +392,12 @@ export async function executeRecoveryAction(actionId) {
       // Retry with backoff
       await db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
         .run('failed', JSON.stringify({ error: err.message, retryable: true }), action.id);
-      logDecision(caseData.id, 'execution_failed', { actionType: action.action_type, error: err.message, retryable: true });
+      await logDecision(caseData.id, 'execution_failed', { actionType: action.action_type, error: err.message, retryable: true });
     } else {
       // Move to dead-letter queue
       await db.prepare('UPDATE recovery_actions SET status = ?, result_details = ? WHERE id = ?')
         .run('dead_letter', JSON.stringify({ error: err.message, retryable: false, failureCount }), action.id);
-      logDecision(caseData.id, 'dead_letter', { actionType: action.action_type, reason: `${failureCount + 1} failures: ${err.message}` });
+      await logDecision(caseData.id, 'dead_letter', { actionType: action.action_type, reason: `${failureCount + 1} failures: ${err.message}` });
     }
 
     return { status: 'error', error: err.message };

@@ -14,13 +14,22 @@ const reasonToClass = {
   'checkout_abandoned': { category: 'abandonment', baseRecoveryProbability: 0.45, isRetryable: false, description: 'Customer left checkout without completing purchase' },
   'checkout_timeout': { category: 'abandonment', baseRecoveryProbability: 0.35, isRetryable: false, description: 'Checkout session timed out' },
   'near_expiry_inventory': { category: 'opportunity', baseRecoveryProbability: 0.25, isRetryable: false, description: 'Inventory nearing expiry - recovery campaign opportunity' },
-  'subscription_failed': { category: 'temporary', baseRecoveryProbability: 0.60, isRetryable: true, description: 'Subscription renewal payment failed' },
-  'invoice_overdue': { category: 'behavioral', baseRecoveryProbability: 0.50, isRetryable: false, description: 'Invoice past due date' }
+  'temporary_failure': { category: 'temporary', baseRecoveryProbability: 0.70, isRetryable: true },
+  'high_value_failure': { category: 'temporary', baseRecoveryProbability: 0.80, isRetryable: true },
+  'bad_request_error': { category: 'temporary', baseRecoveryProbability: 0.50, isRetryable: true },
+  'server_error': { category: 'temporary', baseRecoveryProbability: 0.75, isRetryable: true },
+  'payment_failed': { category: 'temporary', baseRecoveryProbability: 0.50, isRetryable: true }
 };
+
+function normalizeKey(str) {
+  if (!str) return 'unknown';
+  return String(str).toLowerCase().trim().replace(/[\s-]+/g, '_');
+}
 
 export function classifyFailure(failureReason, failureSource) {
   const defaultClass = { category: 'unknown', baseRecoveryProbability: 0.30, isRetryable: true };
-  const classification = reasonToClass[failureReason] || defaultClass;
+  const normalized = normalizeKey(failureReason);
+  const classification = reasonToClass[normalized] || defaultClass;
 
   return {
     category: classification.category,
@@ -32,7 +41,8 @@ export function classifyFailure(failureReason, failureSource) {
 
 export function classifyEvent(eventType, metadata) {
   const defaultClass = { category: 'unknown', baseRecoveryProbability: 0.30, isRetryable: true };
-  const classification = reasonToClass[eventType] || defaultClass;
+  const normalized = normalizeKey(eventType);
+  const classification = reasonToClass[normalized] || defaultClass;
 
   return {
     category: classification.category,

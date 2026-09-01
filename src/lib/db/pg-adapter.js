@@ -52,6 +52,8 @@ function normalizeArgs(args) {
   return params.map(val => (val === undefined ? null : val));
 }
 
+import { POSTGRES_SCHEMA } from './schema.pg.js';
+
 export class PgDatabase {
   constructor(connectionString) {
     this.pool = new Pool({
@@ -63,13 +65,16 @@ export class PgDatabase {
     });
     this.isPostgres = true;
     this.schemaReady = null;
+
+    this.pool.on('error', (err) => {
+      console.error('[pg-adapter] Unexpected error on idle PostgreSQL client:', err.message);
+    });
   }
 
   async ensureSchema() {
     if (!this.schemaReady) {
-      const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.pg.sql');
-      const schema = fs.readFileSync(schemaPath, 'utf8');
-      this.schemaReady = this.pool.query(schema).catch(error => {
+      this.schemaReady = this.pool.query(POSTGRES_SCHEMA).catch(error => {
+        console.error('[pg-adapter] Schema initialization error:', error.message);
         this.schemaReady = null;
         throw error;
       });

@@ -34,9 +34,10 @@ export async function GET(request) {
       }
     }
     if (search) {
-      query += ` AND c.name LIKE ?`
-      countQuery += ` AND c.name LIKE ?`
-      params.push(`%${search}%`)
+      query += ` AND (LOWER(c.name) LIKE LOWER(?) OR LOWER(c.email) LIKE LOWER(?) OR LOWER(COALESCE(c.company, '')) LIKE LOWER(?) OR LOWER(rc.id) LIKE LOWER(?))`
+      countQuery += ` AND (LOWER(c.name) LIKE LOWER(?) OR LOWER(c.email) LIKE LOWER(?) OR LOWER(COALESCE(c.company, '')) LIKE LOWER(?) OR LOWER(rc.id) LIKE LOWER(?))`
+      const searchParam = `%${search}%`
+      params.push(searchParam, searchParam, searchParam, searchParam)
     }
 
     const allowedSort = ['priority_score', 'amount_at_risk', 'opened_at', 'recovery_probability']
