@@ -242,7 +242,7 @@ export default function SimulatorPage() {
 
   const scenarios = [
     {
-      id: 'temporary',
+      id: 'temporary_failure',
       name: 'Temporary Insufficient Funds (Soft Decline)',
       desc: 'Simulates a transient debit card balance deficiency. Engine should prescribe exponential backoff retry aligned with banking deposit windows.',
       color: '#00FFF5',
@@ -256,14 +256,14 @@ export default function SimulatorPage() {
       badge: 'Hard Decline'
     },
     {
-      id: 'high_value',
+      id: 'high_value_failure',
       name: 'High-Value Enterprise Account Failure ($5,000+ MRR)',
       desc: 'Simulates payment failure on an Enterprise Tier customer. Engine should flag P0 Priority and prepare immediate dedicated account manager concierge escalation.',
       color: '#fb7185',
       badge: 'P0 Critical'
     },
     {
-      id: 'cart_abandoned',
+      id: 'checkout_abandoned',
       name: 'Checkout Session / 3DS OTP Dropoff',
       desc: 'Simulates customer dropping out during 3D-Secure authentication. Engine should trigger an abandoned checkout incentive workflow.',
       color: '#38bdf8',

@@ -12,6 +12,7 @@ import { deterministicFallback } from '../src/lib/engine/fallback.js';
 import { classifyAttribution, estimateNaiveBaseline } from '../src/lib/engine/attribution.js';
 import { processFailedPayment, processEvent, executeRecoveryAction, processRecoveryOutcome } from '../src/lib/engine/orchestrator.js';
 import { parseCSV, autoMapColumns } from '../src/lib/dataset/parser.js';
+import { translateSqlToPg } from '../src/lib/db/pg-adapter.js';
 
 describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
   before(async () => {
@@ -150,5 +151,12 @@ describe('AI Revenue Recovery Platform - Core Engine Tests', () => {
     assert.equal(second.skipped, true);
     assert.equal(customer.successful_payments, 1);
     assert.equal(customer.total_payments, 1);
+  });
+
+  test('10. PostgreSQL date-window translation does not create a phantom bind parameter', () => {
+    const sql = translateSqlToPg("SELECT * FROM recovery_actions WHERE executed_at > datetime('now', '-30 days') AND case_id = ?");
+    assert.match(sql, /INTERVAL '30 days'/);
+    assert.match(sql, /case_id = \$1/);
+    assert.doesNotMatch(sql, /INTERVAL '\$1 days'/);
   });
 });

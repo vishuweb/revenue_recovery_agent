@@ -29,8 +29,15 @@ export async function POST(request) {
     const entityNotes = paymentEntity?.notes || orderEntity?.notes || paymentLinkEntity?.notes || {};
     const noteCaseId = entityNotes.caseId || entityNotes.case_id || null;
     const noteCustomerId = entityNotes.customerId || entityNotes.customer_id || null;
-
+    const idempotencyKey = `${event}_${paymentId}`;
     const db = getDb();
+
+    // Check before creating a fallback customer so a repeated simulator event
+    // cannot create an orphan customer record.
+    const existingEvent = await db.prepare('SELECT id FROM events WHERE idempotency_key = ?').get(idempotencyKey);
+    if (existingEvent) {
+      return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
+    }
 
     // Determine customer ID
     let customerId = paymentEntity?.customer_id || noteCustomerId || null;
@@ -88,14 +95,6 @@ export async function POST(request) {
       }
     }
 
-    const idempotencyKey = `${event}_${paymentId || event_id || uuidv4()}`;
-
-    // Idempotency check
-    const existingEvent = await db.prepare('SELECT id FROM events WHERE idempotency_key = ?').get(idempotencyKey);
-    if (existingEvent) {
-      return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
-    }
-
     const amount = paymentEntity?.amount || orderEntity?.amount || paymentLinkEntity?.amount || 0;
     const failureReason = paymentEntity?.error_code || paymentEntity?.error_reason || paymentEntity?.failure_reason || 'payment_failed';
 
@@ -137,9 +136,27 @@ export async function POST(request) {
           amount
         });
       }
+    } else if (event === 'payment.authorized') {
+      // Authorization is intentionally not treated as a recovered payment.
+      await db.prepare(`
+        INSERT INTO payments (id, customer_id, subscription_id, invoice_id, amount, status, method, provider_payment_id, attempted_at)
+        VALUES (?, ?, ?, ?, ?, 'authorized', ?, ?, datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET
+          status = 'authorized',
+          provider_payment_id = excluded.provider_payment_id,
+          attempted_at = excluded.attempted_at
+      `).run(
+        paymentId, customerId, paymentEntity?.subscription_id || null,
+        paymentEntity?.invoice_id || null, amount,
+        paymentEntity?.method || 'card', paymentEntity?.id || paymentId
+      );
+      await auditLog({
+        entityType: 'webhook', entityId: paymentId, eventType: 'payment_authorized_webhook', actor: 'simulator',
+        description: '[SIMULATED] Payment authorized; awaiting capture before recovery settlement',
+        details: { event, amount, customerId }, amount
+      });
     } else if (
       event === 'payment.captured' ||
-      event === 'payment.authorized' ||
       event === 'order.paid' ||
       event === 'payment_link.paid' ||
       event === 'subscription.charged'

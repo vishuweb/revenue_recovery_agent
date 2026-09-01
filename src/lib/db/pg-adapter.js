@@ -31,8 +31,10 @@ export function translateSqlToPg(sqliteSql) {
 
   // Dialect translations
   out = out.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
-  out = out.replace(/datetime\('now',\s*'-(\d+)\s*days'\)/gi, "(CURRENT_TIMESTAMP - INTERVAL '$1 days')");
-  out = out.replace(/date\('now',\s*'-(\d+)\s*days'\)/gi, "(CURRENT_DATE - INTERVAL '$1 days')");
+  // Use a replacement callback so the captured day count is not mistaken for
+  // a PostgreSQL bind parameter (for example, `$1 days`).
+  out = out.replace(/datetime\('now',\s*'-(\d+)\s*days'\)/gi, (_match, days) => `(CURRENT_TIMESTAMP - INTERVAL '${days} days')`);
+  out = out.replace(/date\('now',\s*'-(\d+)\s*days'\)/gi, (_match, days) => `(CURRENT_DATE - INTERVAL '${days} days')`);
   out = out.replace(/date\('now'\)/gi, 'CURRENT_DATE');
   out = out.replace(/date\(([^)]+)\)/gi, 'DATE($1)');
 
@@ -60,25 +62,42 @@ export class PgDatabase {
       connectionTimeoutMillis: 10000,
     });
     this.isPostgres = true;
+    this.schemaReady = null;
+  }
+
+  async ensureSchema() {
+    if (!this.schemaReady) {
+      const schemaPath = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.pg.sql');
+      const schema = fs.readFileSync(schemaPath, 'utf8');
+      this.schemaReady = this.pool.query(schema).catch(error => {
+        this.schemaReady = null;
+        throw error;
+      });
+    }
+    await this.schemaReady;
   }
 
   prepare(sql) {
     const pgSql = translateSqlToPg(sql);
     const pool = this.pool;
+    const ensureSchema = () => this.ensureSchema();
 
     return {
       async all(...args) {
         const params = normalizeArgs(args);
+        await ensureSchema();
         const res = await pool.query(pgSql, params);
         return res.rows;
       },
       async get(...args) {
         const params = normalizeArgs(args);
+        await ensureSchema();
         const res = await pool.query(pgSql, params);
         return res.rows[0] || undefined;
       },
       async run(...args) {
         const params = normalizeArgs(args);
+        await ensureSchema();
         const res = await pool.query(pgSql, params);
         return { changes: res.rowCount, rowCount: res.rowCount };
       }
@@ -86,6 +105,7 @@ export class PgDatabase {
   }
 
   async exec(sql) {
+    await this.ensureSchema();
     return await this.pool.query(sql);
   }
 
@@ -96,6 +116,7 @@ export class PgDatabase {
 
   transaction(fn) {
     return async (...txArgs) => {
+      await this.ensureSchema();
       const client = await this.pool.connect();
       try {
         await client.query('BEGIN');

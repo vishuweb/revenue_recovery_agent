@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [timeframe, setTimeframe] = useState('week');
   const [segmentedView, setSegmentedView] = useState('telemetry');
   const [selectedCaseForAction, setSelectedCaseForAction] = useState(null);
@@ -46,12 +47,13 @@ export default function DashboardPage() {
   const fetchDashboard = async () => {
     try {
       const res = await fetch('/api/dashboard');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Dashboard request failed (${res.status})`);
+      setData(json);
+      setLoadError(null);
     } catch (e) {
       console.error(e);
+      setLoadError(e.message || 'Unable to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -75,7 +77,7 @@ export default function DashboardPage() {
     setIsActionModalOpen(true);
   };
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div>
         <div className="dashboard-hero">
@@ -94,6 +96,18 @@ export default function DashboardPage() {
           <div className="card skeleton" style={{ height: '280px' }} />
           <div className="card skeleton" style={{ height: '280px' }} />
         </div>
+      </div>
+    );
+  }
+
+  if (loadError || !data) {
+    return (
+      <div className="card" style={{ maxWidth: '620px', margin: '48px auto', textAlign: 'center', padding: '32px' }}>
+        <h1 className="hero-title" style={{ fontSize: '24px' }}>Dashboard unavailable</h1>
+        <p style={{ color: '#8e9ba9', margin: '12px 0 20px' }}>{loadError || 'No dashboard data was returned.'}</p>
+        <button className="btn btn-primary" onClick={() => { setLoading(true); fetchDashboard(); }}>
+          <IconRefresh size={14} /> Retry loading
+        </button>
       </div>
     );
   }
