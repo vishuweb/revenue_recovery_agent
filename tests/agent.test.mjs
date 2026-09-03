@@ -19,7 +19,11 @@ import { evaluateOutcome, routeEvaluateOutcome } from '../src/lib/agent/nodes/ev
 import { evaluatePolicy, classifyDenial } from '../src/lib/policy/policyEngine.js';
 import * as memoryService from '../src/lib/memory/memoryService.js';
 
-import { runRecoveryAgent } from '../src/lib/agent/graph.js';
+import { runRecoveryAgent, resumeRecoveryAgent, processPendingAgentResumptions } from '../src/lib/agent/graph.js';
+import { processRecoveryOutcome } from '../src/lib/engine/orchestrator.js';
+import { POST as webhookPost } from '../src/app/api/webhooks/route.js';
+import { POST as simulateWebhookPost } from '../src/app/api/webhooks/simulate/route.js';
+import crypto from 'crypto';
 
 // Force every LLM call in this test run to fail fast (unreachable host) so
 // tests are deterministic and never depend on a real Ollama instance being
@@ -74,7 +78,8 @@ describe('LangGraph Recovery Agent', () => {
     const update = await analyzeFailure(state);
     assert.equal(update.failure_category, 'permanent');
     assert.equal(update.is_retryable, false);
-    assert.equal(update.llm_used, false);
+    assert.equal(update.analysis_ai_assisted, false);
+    assert.ok(update.analysis_ai_fallback_reason);
     assert.ok(update.failure_explanation);
   });
 
@@ -101,7 +106,7 @@ describe('LangGraph Recovery Agent', () => {
     const update = await decideRecoveryAction(state);
     const candidateNames = update.candidate_actions.map((c) => c.action);
     assert.ok(candidateNames.includes(update.selected_action), 'selected action must come from the computed candidate list');
-    assert.equal(update.llm_used, false, 'LLM is unreachable in this test run, so it must not have been used');
+    assert.equal(update.decision_ai_assisted, false, 'LLM is unreachable in this test run, so it must not have been used');
   });
 
   test('9. policy_gate denies retries beyond the maximum attempt count', async () => {
@@ -290,6 +295,190 @@ describe('LangGraph Recovery Agent', () => {
 
       const result = await runRecoveryAgent(paymentId);
       assert.ok(validOutcomes.includes(result.decision.outcome), `unexpected outcome: ${result.decision.outcome}`);
+    }
+  });
+
+  test('24. Memory genuinely changes a later decision for the same customer (not a fabricated message)', async () => {
+    const db = getDb();
+    // authentication_failed (behavioral) at ₹400 reliably makes 'email' the
+    // raw NEV winner over 'payment_link' and 'retry' — verified by direct
+    // computation against lib/engine/decider.js. A customer who personally
+    // recovered via 'payment_link' before should see it re-ranked above
+    // 'email' on the next failure.
+    const customer = await db.prepare(`
+      SELECT * FROM customers WHERE opted_out = 0 ORDER BY RANDOM() LIMIT 1
+    `).get();
+
+    const firstPaymentId = uuidv4();
+    await db.prepare(`
+      INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+      VALUES (?, ?, 40000, 'INR', 'failed', 'card', 'authentication_failed', 'test', datetime('now'), datetime('now'))
+    `).run(firstPaymentId, customer.id);
+    const firstResult = await runRecoveryAgent(firstPaymentId);
+    assert.equal(firstResult.decision.action, 'email', 'sanity check: raw NEV winner without memory should be email');
+    assert.equal(firstResult.decision.memoryInfluenced, false);
+
+    // Simulate that email did NOT work, but a payment_link sent afterward did.
+    memoryService.recordOutcome({ customerId: customer.id, caseId: firstResult.caseId, failureCategory: 'behavioral', actionType: 'email', success: false });
+    memoryService.recordOutcome({ customerId: customer.id, caseId: firstResult.caseId, failureCategory: 'behavioral', actionType: 'payment_link', success: true });
+
+    const secondPaymentId = uuidv4();
+    await db.prepare(`
+      INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+      VALUES (?, ?, 40000, 'INR', 'failed', 'card', 'authentication_failed', 'test', datetime('now'), datetime('now'))
+    `).run(secondPaymentId, customer.id);
+    const secondResult = await runRecoveryAgent(secondPaymentId);
+
+    assert.equal(secondResult.decision.action, 'payment_link', 'memory should have promoted payment_link above the raw NEV winner');
+    assert.equal(secondResult.decision.memoryInfluenced, true);
+    assert.match(secondResult.decision.memoryReason, /payment_link/);
+
+    // The UI's proof point must be backed by a real audit_log row, not just an in-memory value.
+    const proofEntry = await db.prepare(`
+      SELECT * FROM audit_log WHERE entity_id = ? AND event_type = 'decision.memory_applied'
+    `).get(secondResult.caseId);
+    assert.ok(proofEntry, 'memory_applied audit entry must exist');
+  });
+
+  test('25. Checkpoint pause: a dispatched-but-unconfirmed action pauses rather than looping, and is NOT closed', async () => {
+    const db = getDb();
+    const customer = await db.prepare(`SELECT * FROM customers WHERE opted_out = 0 ORDER BY RANDOM() LIMIT 1`).get();
+    const paymentId = uuidv4();
+    await db.prepare(`
+      INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+      VALUES (?, ?, 40000, 'INR', 'failed', 'card', 'authentication_failed', 'test', datetime('now'), datetime('now'))
+    `).run(paymentId, customer.id);
+
+    const result = await runRecoveryAgent(paymentId);
+    assert.equal(result.decision.outcome, 'RETRYABLE');
+    assert.equal(result.decision.stopReason, 'awaiting_customer_response');
+
+    const caseRow = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(result.caseId);
+    assert.ok(['open', 'in_progress'].includes(caseRow.status), 'a paused case must stay open, not be closed like a real stop');
+
+    // The cron sweep must NOT resume it before its recheck delay is due.
+    const dry = await processPendingAgentResumptions({ force: false });
+    assert.equal(dry.results.some((r) => r.caseId === result.caseId), false);
+  });
+
+  test('26. Checkpoint resume: forcing the sweep re-runs the graph on the same thread and preserves counters', async () => {
+    const db = getDb();
+    const customer = await db.prepare(`SELECT * FROM customers WHERE opted_out = 0 ORDER BY RANDOM() LIMIT 1`).get();
+    const paymentId = uuidv4();
+    await db.prepare(`
+      INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+      VALUES (?, ?, 40000, 'INR', 'failed', 'card', 'authentication_failed', 'test', datetime('now'), datetime('now'))
+    `).run(paymentId, customer.id);
+
+    const first = await runRecoveryAgent(paymentId);
+    const actionsBefore = await db.prepare('SELECT COUNT(*) as n FROM recovery_actions WHERE case_id = ?').get(first.caseId);
+
+    const forced = await processPendingAgentResumptions({ force: true });
+    assert.ok(forced.results.some((r) => r.caseId === first.caseId), 'the paused case must be found and resumed when forced');
+
+    const actionsAfter = await db.prepare('SELECT COUNT(*) as n FROM recovery_actions WHERE case_id = ?').get(first.caseId);
+    assert.ok(actionsAfter.n > actionsBefore.n, 'resuming must produce a fresh decision cycle, not a no-op');
+
+    const resumedAuditCount = await db.prepare(`
+      SELECT COUNT(*) as n FROM audit_log WHERE entity_id = ? AND event_type = 'decision.agent_resumed'
+    `).get(first.caseId);
+    assert.ok(resumedAuditCount.n >= 1);
+  });
+
+  test('27. Checkpoint resume short-circuits when the case already resolved while paused, and attributes memory correctly', async () => {
+    const db = getDb();
+    const customer = await db.prepare(`SELECT * FROM customers WHERE opted_out = 0 ORDER BY RANDOM() LIMIT 1`).get();
+    const paymentId = uuidv4();
+    await db.prepare(`
+      INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+      VALUES (?, ?, 40000, 'INR', 'failed', 'card', 'authentication_failed', 'test', datetime('now'), datetime('now'))
+    `).run(paymentId, customer.id);
+
+    const result = await runRecoveryAgent(paymentId);
+    assert.equal(result.decision.outcome, 'RETRYABLE');
+
+    // A real payment.captured webhook would call this directly, independent of the agent.
+    await processRecoveryOutcome(result.caseId, { success: true });
+
+    const resumed = await resumeRecoveryAgent(`case_${paymentId}`);
+    assert.equal(resumed.alreadyResolved, true);
+    assert.equal(resumed.status, 'recovered');
+
+    const memory = memoryService.getCustomerHistory(customer.id, 20);
+    const attributed = memory.find((m) => m.case_id === result.caseId);
+    assert.ok(attributed, 'the paused action must be attributed a real outcome once the case resolves');
+    assert.equal(attributed.outcome, 'success');
+  });
+
+  test('28. Razorpay webhook and simulator webhook both drive the SAME agent graph (RECOVERY_ENGINE=agent)', async () => {
+    const previousEngine = process.env.RECOVERY_ENGINE;
+    process.env.RECOVERY_ENGINE = 'agent';
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_test_secret_webhook';
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret;
+    try {
+      const razorpayPaymentId = `pay_parity_rzp_${Date.now()}`;
+      const rawBody = JSON.stringify({
+        event: 'payment.failed',
+        payload: { payment: { entity: { id: razorpayPaymentId, amount: 30000, currency: 'INR', status: 'failed', error_reason: 'insufficient_funds' } } },
+      });
+      const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+      const razorpayReq = new Request('http://localhost:3000/api/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-razorpay-signature': signature },
+        body: rawBody,
+      });
+      const razorpayRes = await webhookPost(razorpayReq);
+      assert.equal(razorpayRes.status, 200);
+      const razorpayJson = await razorpayRes.json();
+      assert.ok(razorpayJson.caseId, 'razorpay webhook must still return a caseId under RECOVERY_ENGINE=agent');
+
+      const simPaymentId = `pay_parity_sim_${Date.now()}`;
+      const simReq = new Request('http://localhost:3000/api/webhooks/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'payment.failed',
+          payload: { payment: { entity: { id: simPaymentId, amount: 30000, currency: 'INR', status: 'failed', error_reason: 'insufficient_funds' } } },
+        }),
+      });
+      const simRes = await simulateWebhookPost(simReq);
+      assert.equal(simRes.status, 200);
+      const simJson = await simRes.json();
+      assert.ok(simJson.caseId, 'simulator webhook must still return a caseId under RECOVERY_ENGINE=agent');
+
+      const db = getDb();
+      for (const caseId of [razorpayJson.caseId, simJson.caseId]) {
+        const agentEntries = await db.prepare(`
+          SELECT COUNT(*) as n FROM audit_log WHERE entity_id = ? AND actor = 'agent'
+        `).get(caseId);
+        assert.ok(agentEntries.n > 0, `case ${caseId} must have been processed by the agent graph, not the deterministic pipeline`);
+      }
+    } finally {
+      process.env.RECOVERY_ENGINE = previousEngine;
+    }
+  });
+
+  test('29. Batch metrics endpoints aggregate from real persisted rows, not a separate pipeline', async () => {
+    const db = getDb();
+    const { GET: metricsGet } = await import('../src/app/api/agent/metrics/route.js');
+    const { GET: strategiesGet } = await import('../src/app/api/agent/strategies/route.js');
+
+    const metricsRes = await metricsGet();
+    const metrics = await metricsRes.json();
+    assert.equal(metrics.enabled, true);
+    assert.ok(metrics.casesProcessed > 0);
+
+    const recomputedAtRisk = await db.prepare(`
+      SELECT SUM(rc.amount_at_risk) as total FROM recovery_cases rc
+      WHERE rc.id IN (SELECT DISTINCT entity_id FROM audit_log WHERE actor = 'agent' AND entity_type = 'case')
+    `).get();
+    assert.equal(metrics.totalRevenueAtRisk, recomputedAtRisk.total);
+
+    const strategiesRes = await strategiesGet();
+    const strategies = await strategiesRes.json();
+    assert.ok(Array.isArray(strategies.strategies));
+    for (const s of strategies.strategies) {
+      assert.ok(s.attempts >= s.recovered, 'recovered count can never exceed attempts');
     }
   });
 });

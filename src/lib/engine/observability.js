@@ -34,6 +34,13 @@ export const DECISION_PHASES = [
   'ai_fallback',
   'dead_letter',
   'idempotency_skip',
+  // LangGraph agent-specific phases (lib/agent/*) — same table, actor='agent'
+  'memory_retrieved',
+  'memory_updated',
+  'memory_applied',
+  'ai_unavailable',
+  'agent_resumed',
+  'agent_stopped',
 ];
 
 /**
@@ -108,6 +115,18 @@ function buildDescription(phase, data) {
       return `Action moved to dead-letter queue: ${data.reason || 'max retries exceeded'}`;
     case 'idempotency_skip':
       return `Duplicate detected, skipped: ${data.key || '?'}`;
+    case 'memory_retrieved':
+      return data.message || `Memory retrieved: ${data.sampleSize || 0} prior interaction(s) for this customer`;
+    case 'memory_updated':
+      return data.message || `Memory updated for action '${data.actionType || '?'}'`;
+    case 'memory_applied':
+      return data.message || `Memory influenced action selection: ${data.reason || '?'}`;
+    case 'ai_unavailable':
+      return data.message || `AI unavailable during ${data.stage || 'a reasoning step'} (${data.reason || 'unknown reason'})`;
+    case 'agent_resumed':
+      return data.message || (data.alreadyResolved ? `Resumed — case had already resolved to '${data.status}'` : 'Resumed from checkpoint');
+    case 'agent_stopped':
+      return data.message || `Agent stopped: ${data.stopReason || data.outcome || '?'}`;
     default:
       return `Decision phase: ${phase}`;
   }

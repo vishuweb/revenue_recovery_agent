@@ -61,8 +61,15 @@ export const AgentState = Annotation.Root({
   selected_action: Annotation({ reducer: overwrite, default: () => null }),
   action_reason: Annotation({ reducer: overwrite, default: () => null }),
   action_params: Annotation({ reducer: overwrite, default: () => ({}) }),
-  llm_used: Annotation({ reducer: overwrite, default: () => false }),
-  llm_fallback_reason: Annotation({ reducer: overwrite, default: () => null }),
+  // Two distinct LLM call sites in the graph (analyze_failure and
+  // decide_recovery_action) — kept in separate channels so the second
+  // call's result can never silently overwrite the first's in final state.
+  analysis_ai_assisted: Annotation({ reducer: overwrite, default: () => false }),
+  analysis_ai_fallback_reason: Annotation({ reducer: overwrite, default: () => null }),
+  decision_ai_assisted: Annotation({ reducer: overwrite, default: () => false }),
+  decision_ai_fallback_reason: Annotation({ reducer: overwrite, default: () => null }),
+  memory_influenced: Annotation({ reducer: overwrite, default: () => false }),
+  memory_reason: Annotation({ reducer: overwrite, default: () => null }),
 
   // ---- policy ------------------------------------------------------------
   policy_result: Annotation({ reducer: overwrite, default: () => null }),
@@ -70,6 +77,7 @@ export const AgentState = Annotation.Root({
   // ---- execution -----------------------------------------------------------
   execution_result: Annotation({ reducer: overwrite, default: () => null }),
   outcome: Annotation({ reducer: overwrite, default: () => null }),
+  awaiting_real_world_signal: Annotation({ reducer: overwrite, default: () => false }),
 
   // ---- loop control / stopping rules ---------------------------------------
   attempt_count: Annotation({ reducer: overwrite, default: () => 0 }),

@@ -44,15 +44,52 @@ export default function DashboardPage() {
   const [selectedCaseForAction, setSelectedCaseForAction] = useState(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [agentMetrics, setAgentMetrics] = useState(null);
+  const [agentStrategies, setAgentStrategies] = useState(null);
+  const [demoRunning, setDemoRunning] = useState(false);
 
   const fetchAgentMetrics = async () => {
     try {
       const res = await fetch('/api/agent/metrics');
       if (res.ok) setAgentMetrics(await res.json());
+      const stratRes = await fetch('/api/agent/strategies');
+      if (stratRes.ok) setAgentStrategies(await stratRes.json());
     } catch (e) {
       // Purely additive panel — a failure here should never affect the rest of the dashboard.
     }
   };
+
+  const runRevenueRecoveryDemo = async () => {
+    setDemoRunning(true);
+    toast.info('Running Revenue Recovery Demo: processing 100 simulated cases through the agent...');
+    try {
+      const res = await fetch('/api/agent/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: 100 }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        toast.success(`Demo complete: ${json.summary?.recoveredCount || 0} recovered, ${json.summary?.escalatedCount || 0} escalated, ${json.summary?.stoppedCount || 0} stopped.`);
+        await fetchDashboard();
+        await fetchAgentMetrics();
+      } else {
+        toast.error(json.error || 'Demo run failed');
+      }
+    } catch (e) {
+      toast.error('Network failure running the demo');
+    } finally {
+      setDemoRunning(false);
+    }
+  };
+
+  function formatDuration(ms) {
+    if (!ms || ms <= 0) return '—';
+    const minutes = ms / 60000;
+    if (minutes < 60) return `${minutes.toFixed(0)}m`;
+    const hours = minutes / 60;
+    if (hours < 24) return `${hours.toFixed(1)}h`;
+    return `${(hours / 24).toFixed(1)}d`;
+  }
 
   const fetchDashboard = async () => {
     try {
@@ -322,37 +359,131 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Autonomous Agent (LangGraph + Ollama) — additive, only shown once the agent has processed at least one case */}
-      {agentMetrics?.enabled && (
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + Ollama)</h3>
-            <span className="badge primary">{agentMetrics.casesProcessed} case(s) processed</span>
-          </div>
-          <div className="grid-cols-4">
-            <div className="card stat-card">
-              <div className="stat-header"><span className="stat-label">Agent Revenue Recovered</span></div>
-              <span className="stat-value" style={{ color: '#00FFF5' }}>{formatCurrency(agentMetrics.totalRecovered)}</span>
-              <div className="stat-footer"><span>of {formatCurrency(agentMetrics.totalRevenueAtRisk)} at risk</span></div>
-            </div>
-            <div className="card stat-card">
-              <div className="stat-header"><span className="stat-label">Agent Recovery Rate</span></div>
-              <span className="stat-value" style={{ color: '#00FFF5' }}>{(agentMetrics.recoveryRate || 0).toFixed(1)}%</span>
-              <div className="stat-footer"><span>{agentMetrics.recoveredCount} recovered automatically</span></div>
-            </div>
-            <div className="card stat-card">
-              <div className="stat-header"><span className="stat-label">Escalations to Human</span></div>
-              <span className="stat-value" style={{ color: '#fbbf24' }}>{agentMetrics.escalatedCount}</span>
-              <div className="stat-footer"><span>{agentMetrics.stoppedCount} stopped by policy/engine</span></div>
-            </div>
-            <div className="card stat-card">
-              <div className="stat-header"><span className="stat-label">Avg. Attempts per Case</span></div>
-              <span className="stat-value">{(agentMetrics.avgAttempts || 0).toFixed(1)}</span>
-              <div className="stat-footer"><span>{agentMetrics.automaticActions} autonomous actions taken</span></div>
-            </div>
+      {/* Autonomous Agent (LangGraph + Ollama) — additive; the hero pipeline and
+          demo button are always visible so the agent story is obvious even
+          before any case has run. Metrics/strategy tiles appear once data exists. */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + Ollama)</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {agentMetrics?.enabled && <span className="badge primary">{agentMetrics.casesProcessed} case(s) processed</span>}
+            <button className="btn btn-primary btn-sm" onClick={runRevenueRecoveryDemo} disabled={demoRunning}>
+              <IconZap size={14} />
+              <span>{demoRunning ? 'Running Demo...' : 'Run Revenue Recovery Demo'}</span>
+            </button>
           </div>
         </div>
-      )}
+
+        {/* The product story, made obvious in one glance */}
+        <div className="card" style={{ marginBottom: '16px', padding: '16px 18px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap', minWidth: 'max-content' }}>
+            {['Revenue at Risk', 'Detect', 'Analyze', 'Recall Memory', 'Decide', 'Policy Gate', 'Execute', 'Observe', 'Learn', 'Recover / Retry / Escalate / Stop'].map((step, i, arr) => (
+              <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  className={`badge ${i === 0 ? 'danger' : i === arr.length - 1 ? 'success' : 'primary'}`}
+                  style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
+                >
+                  {step}
+                </span>
+                {i < arr.length - 1 && <span style={{ color: '#5f6d7e' }}>→</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {agentMetrics?.enabled ? (
+          <>
+            <div className="grid-cols-4" style={{ marginBottom: '12px' }}>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Agent Revenue Recovered</span></div>
+                <span className="stat-value" style={{ color: '#00FFF5' }}>{formatCurrency(agentMetrics.totalRecovered)}</span>
+                <div className="stat-footer"><span>of {formatCurrency(agentMetrics.totalRevenueAtRisk)} at risk</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Agent Recovery Rate</span></div>
+                <span className="stat-value" style={{ color: '#00FFF5' }}>{(agentMetrics.recoveryRate || 0).toFixed(1)}%</span>
+                <div className="stat-footer"><span>{agentMetrics.recoveredCount} of {agentMetrics.casesProcessed} recovered</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Escalations to Human</span></div>
+                <span className="stat-value" style={{ color: '#fbbf24' }}>{agentMetrics.escalatedCount}</span>
+                <div className="stat-footer"><span>{agentMetrics.stoppedCount} stopped by policy</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Failed Cases</span></div>
+                <span className="stat-value" style={{ color: '#fb7185' }}>{agentMetrics.failedCount}</span>
+                <div className="stat-footer"><span>retries exhausted, not recoverable</span></div>
+              </div>
+            </div>
+            <div className="grid-cols-4" style={{ marginBottom: '16px' }}>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Automated Actions</span></div>
+                <span className="stat-value">{agentMetrics.automaticActions}</span>
+                <div className="stat-footer"><span>decisions executed autonomously</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Avg. Attempts / Case</span></div>
+                <span className="stat-value">{(agentMetrics.avgAttempts || 0).toFixed(1)}</span>
+                <div className="stat-footer"><span>reasoning cycles before stopping</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Avg. Recovery Time</span></div>
+                <span className="stat-value">{formatDuration(agentMetrics.avgRecoveryTimeMs)}</span>
+                <div className="stat-footer"><span>open → recovered</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Awaiting Response</span></div>
+                <span className="stat-value" style={{ color: '#38bdf8' }}>{agentMetrics.pausedCount}</span>
+                <div className="stat-footer"><span>paused, checkpointed for later</span></div>
+              </div>
+            </div>
+
+            {agentStrategies?.strategies?.length > 0 && (
+              <div className="card">
+                <div className="card-header">
+                  <h3 className="card-title">
+                    <IconAnalytics size={16} color="#00FFF5" />
+                    <span>Strategy Effectiveness</span>
+                  </h3>
+                  <p className="card-subtitle">Which interventions the agent actually chose, and how often they recovered revenue</p>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#8e9ba9', fontSize: '11px', textTransform: 'uppercase' }}>
+                        <th style={{ padding: '6px 10px' }}>Strategy</th>
+                        <th style={{ padding: '6px 10px' }}>Attempts</th>
+                        <th style={{ padding: '6px 10px' }}>Recovered</th>
+                        <th style={{ padding: '6px 10px' }}>Success Rate</th>
+                        <th style={{ padding: '6px 10px' }}>Revenue Recovered</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentStrategies.strategies.map((s) => (
+                        <tr key={s.action} style={{ borderTop: '1px solid #3B3E47' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, color: '#ffffff' }}>{s.action.replace('_', ' ')}</td>
+                          <td style={{ padding: '8px 10px', color: '#cbd5e1' }}>{s.attempts}</td>
+                          <td style={{ padding: '8px 10px', color: '#cbd5e1' }}>{s.recovered}</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <span className="badge" style={{ background: s.successRate >= 40 ? 'rgba(0,255,245,0.12)' : 'rgba(148,163,184,0.12)', color: s.successRate >= 40 ? '#00FFF5' : '#cbd5e1' }}>
+                              {s.successRate.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#00FFF5', fontFamily: 'monospace' }}>{formatCurrency(s.recoveredAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="card" style={{ padding: '24px', textAlign: 'center', color: '#8e9ba9' }}>
+            No agent-processed cases yet. Click <strong>Run Revenue Recovery Demo</strong> above, or use the simulator&apos;s &quot;Run via Agent&quot; / &quot;Run 20-Case Batch&quot; controls.
+          </div>
+        )}
+      </div>
 
       {/* Analytics Breakdown Grid */}
       <div className="grid-cols-2" style={{ marginBottom: '24px' }}>

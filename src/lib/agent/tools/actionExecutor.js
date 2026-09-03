@@ -57,7 +57,7 @@ export async function createPaymentLink(customerId, amount, description, options
   }
 }
 
-const NOTIFICATION_CHANNELS = new Set(['email', 'sms', 'cart_reminder']);
+export const NOTIFICATION_CHANNELS = new Set(['email', 'sms', 'cart_reminder']);
 
 /** Send a bounded, pre-templated recovery notification. No free-form content, no arbitrary recipients. */
 export async function sendRecoveryNotification(customerId, channel, caseId, message = null) {

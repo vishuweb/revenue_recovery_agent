@@ -546,12 +546,12 @@ export default function CaseDetailPage({ params }) {
       </div>
 
       {/* Autonomous Agent Insights — only rendered for cases the LangGraph agent handled */}
-      {agentData && (
+      {agentData?.isAgentCase && (
         <div className="card card-elevated" style={{ marginBottom: '20px' }}>
           <div className="card-header">
             <h3 className="card-title">
               <IconZap size={16} color="#00FFF5" />
-              <span>Autonomous Agent Insights</span>
+              <span>Autonomous Agent Decision Timeline</span>
             </h3>
             <span className="badge primary">LangGraph + Ollama</span>
           </div>
@@ -563,18 +563,43 @@ export default function CaseDetailPage({ params }) {
                 {agentData.loopSummary?.outcome || 'In progress'}
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Stop Reason</div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Why the agent stopped</div>
               <div style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '2px' }}>
-                {agentData.loopSummary?.stopReason || '—'}
+                {agentData.loopSummary?.friendlyMessage || 'Still processing.'}
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Attempts / Iterations</div>
-              <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, color: '#00FFF5', marginTop: '2px' }}>
-                {agentData.loopSummary?.attempts ?? 0} / {agentData.loopSummary?.iterations ?? 0}
-              </div>
+          </div>
+
+          {agentData.memoryProof && (
+            <div style={{ background: 'rgba(0,255,245,0.06)', border: '1px solid rgba(0,255,245,0.25)', borderRadius: 'var(--border-radius-card)', padding: '12px 14px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#00FFF5', textTransform: 'uppercase', marginBottom: '4px' }}>Previous recovery outcome influenced this decision</div>
+              <p style={{ fontSize: '12.5px', color: '#cbd5e1', margin: 0 }}>{agentData.memoryProof.message}</p>
             </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+            {agentData.steps?.map((s, i) => (
+              <div key={`${s.step}-${i}`} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '2px' }}>
+                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,255,245,0.15)', border: '1px solid #00ADB4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#00FFF5', fontWeight: 700 }}>
+                    {i + 1}
+                  </div>
+                </div>
+                <div style={{ flex: 1, paddingBottom: '6px', borderBottom: i < agentData.steps.length - 1 ? '1px solid #232833' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#ffffff' }}>{s.label}</span>
+                    <span className="badge" style={{ fontSize: '10px', background: s.aiAssisted ? 'rgba(251,191,36,0.12)' : 'rgba(148,163,184,0.12)', color: s.aiAssisted ? '#fbbf24' : '#94a3b8' }}>
+                      {s.aiAssisted ? 'AI-assisted' : 'Deterministic'}
+                    </span>
+                    <span className="font-mono" style={{ fontSize: '10.5px', color: '#5f6d7e' }}>
+                      {new Date(s.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                  {s.explanation && <p style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '3px', lineHeight: 1.5 }}>{s.explanation}</p>}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div style={{ background: '#181d26', border: '1px solid #3B3E47', borderRadius: 'var(--border-radius-card)', padding: '14px' }}>

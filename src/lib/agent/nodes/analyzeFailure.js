@@ -27,8 +27,8 @@ export async function analyzeFailure(state) {
     failure_category: classification.category,
     is_retryable: classification.isRetryable,
     failure_explanation: explanation,
-    llm_used: llmResult.ok,
-    llm_fallback_reason: llmResult.ok ? null : llmResult.reason,
+    analysis_ai_assisted: llmResult.ok,
+    analysis_ai_fallback_reason: llmResult.ok ? null : llmResult.reason,
     audit_trail: [{
       phase: 'analyze_failure', at: new Date().toISOString(),
       summary: `Classified as ${classification.category} (retryable=${classification.isRetryable}). ${llmResult.ok ? 'LLM explanation used.' : `LLM unavailable, using deterministic description (${llmResult.reason}).`}`,

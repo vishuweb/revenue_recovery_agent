@@ -7,9 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test tests/engine.test.mjs tests/agent.test.mjs && node tests/comprehensive.test.mjs",
-    "test:unit": "node --test tests/engine.test.mjs tests/agent.test.mjs",
-    "test:agent": "node --test tests/agent.test.mjs"
+    "test": "node --import ./scripts/force-local-test-db.mjs --test tests/engine.test.mjs tests/agent.test.mjs && node --import ./scripts/force-local-test-db.mjs tests/comprehensive.test.mjs",
+    "test:unit": "node --import ./scripts/force-local-test-db.mjs --test tests/engine.test.mjs tests/agent.test.mjs",
+    "test:agent": "node --import ./scripts/force-local-test-db.mjs --test tests/agent.test.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.0",

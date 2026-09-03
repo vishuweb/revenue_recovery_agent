@@ -12,6 +12,15 @@ export async function POST(request) {
     const db = getDb()
 
     if (command === 'seed') {
+      // resetDatabase() drops every table. When DATABASE_URL points at
+      // PostgreSQL/Supabase (this project's designated production store —
+      // see .env.example), that must never happen from a UI button click
+      // without an explicit, deliberate opt-in.
+      if (db.isPostgres && process.env.ALLOW_DESTRUCTIVE_RESET !== 'true') {
+        return NextResponse.json({
+          error: 'Refusing to reset: DATABASE_URL points at PostgreSQL (production persistence). Set ALLOW_DESTRUCTIVE_RESET=true to override, or unset DATABASE_URL to seed a local SQLite demo database instead.',
+        }, { status: 403 })
+      }
       await resetDatabase()
       const stats = await generateSimulationData()
       return NextResponse.json({ success: true, message: 'Database seeded', stats })
@@ -117,11 +126,14 @@ export async function POST(request) {
 
     // Execute Pipeline Sweep — triggered by "Execute Pipeline Sweep" button in the simulator UI.
     if (command === 'run_cron') {
+      const { processPendingAgentResumptions } = await import('@/lib/agent/graph')
       const results = await processPendingAutomations()
+      const agentResults = await processPendingAgentResumptions({ force: Boolean(params?.forceAgentResume) })
       return NextResponse.json({
         success: true,
-        message: `Pipeline sweep complete: ${results.actionsProcessed} action(s) executed, ${results.paymentsProcessed} unhandled payment(s) queued`,
-        results
+        message: `Pipeline sweep complete: ${results.actionsProcessed} action(s) executed, ${results.paymentsProcessed} unhandled payment(s) queued, ${agentResults.resumed} paused agent case(s) resumed`,
+        results,
+        agentResults
       })
     }
 

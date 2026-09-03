@@ -91,7 +91,11 @@ export function getDb() {
   try {
     const Database = _require('better-sqlite3');
 
-    const dbPath = path.join(process.cwd(), 'data', 'revenue_recovery.db');
+    // SQLITE_DB_PATH lets tooling (see scripts/force-local-test-db.mjs) point
+    // at a disposable file instead of the real local dev database — the
+    // test suite calls resetDatabase(), which must never be able to touch
+    // whatever a developer's real data/revenue_recovery.db contains.
+    const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'data', 'revenue_recovery.db');
     const dataDir = path.dirname(dbPath);
 
     if (!fs.existsSync(dataDir)) {

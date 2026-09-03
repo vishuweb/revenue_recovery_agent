@@ -3,6 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { logDecision } from '../../engine/observability.js';
 import { executeActionTool } from '../tools/actionExecutor.js';
 
+// Actions whose "success" only means the outreach was dispatched, not that
+// the customer has responded (see observe_outcome). Their recovery_actions
+// row is stamped with a real recheck time so the cron sweep
+// (processPendingAgentResumptions) knows when it's worth looking again —
+// configurable for demos via AGENT_RECHECK_DELAY_MS (default 30 minutes).
+const PAUSE_WORTHY_ACTIONS = new Set(['payment_link', 'email', 'sms', 'cart_reminder', 'discount', 'free_shipping', 'targeted_campaign']);
+const RECHECK_DELAY_MS = parseInt(process.env.AGENT_RECHECK_DELAY_MS, 10) || 30 * 60 * 1000;
+
 /**
  * execute_action — reached only after policy_gate ALLOWs. Creates the
  * recovery_cases row on the first pass (identical shape to what
@@ -40,13 +48,36 @@ export async function executeAction(state) {
     );
 
     await logDecision(caseId, 'event_received', { failureReason: state.failure_reason, amountAtRisk: state.amount_at_risk }, { actor: 'agent', amount: state.amount_at_risk });
-    await logDecision(caseId, 'classified', { category: state.failure_category, baseProbability: state.recovery_probability }, { actor: 'agent' });
-    await logDecision(caseId, 'predicted', { probability: state.recovery_probability }, { actor: 'agent' });
-    await logDecision(caseId, 'candidates_generated', { candidateCount: (state.candidate_actions || []).length }, { actor: 'agent' });
+    await logDecision(caseId, 'context_loaded', {
+      customerId: state.customerId, customerPlan: state.customer?.plan,
+      lifetimeValue: state.customer_value, amountAtRisk: state.amount_at_risk, aiAssisted: false,
+    }, { actor: 'agent' });
+    await logDecision(caseId, 'classified', {
+      category: state.failure_category, baseProbability: state.recovery_probability,
+      aiAssisted: state.analysis_ai_assisted, explanation: state.failure_explanation,
+    }, { actor: 'agent' });
+    if (!state.analysis_ai_assisted && state.analysis_ai_fallback_reason) {
+      await logDecision(caseId, 'ai_unavailable', {
+        stage: 'analyze_failure', reason: state.analysis_ai_fallback_reason,
+        message: 'AI reasoning unavailable. Deterministic classifier used instead — no unsafe action was taken.',
+      }, { actor: 'agent' });
+    }
+    await logDecision(caseId, 'predicted', { probability: state.recovery_probability, aiAssisted: false }, { actor: 'agent' });
+    await logDecision(caseId, 'memory_retrieved', {
+      sampleSize: state.retrieved_memory?.sampleSize || 0,
+      priorSuccessfulActions: state.retrieved_memory?.priorSuccessfulActions || [],
+      priorFailedActions: state.retrieved_memory?.priorFailedActions || [],
+      aiAssisted: false,
+    }, { actor: 'agent' });
+    await logDecision(caseId, 'candidates_generated', { candidateCount: (state.candidate_actions || []).length, aiAssisted: false }, { actor: 'agent' });
   }
 
   const actionId = uuidv4();
   const requiresApproval = Boolean(state.action_params?.requiresApproval);
+  const provenance = [state.decision_ai_assisted ? 'LLM' : null, state.memory_influenced ? 'Memory' : null].filter(Boolean).join('+');
+  const scheduledDelay = PAUSE_WORTHY_ACTIONS.has(state.selected_action)
+    ? Math.max(state.action_params?.scheduledDelay || 0, RECHECK_DELAY_MS)
+    : (state.action_params?.scheduledDelay || 0);
 
   await db.prepare(`
     INSERT INTO recovery_actions (
@@ -54,16 +85,41 @@ export async function executeAction(state) {
     ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
   `).run(
     actionId, caseId, state.selected_action,
-    new Date(Date.now() + (state.action_params?.scheduledDelay || 0)).toISOString(),
+    new Date(Date.now() + scheduledDelay).toISOString(),
     requiresApproval ? 1 : 0,
-    `[Agent${state.llm_used ? '+LLM' : ''}] ${state.action_reason}`,
+    `[Agent${provenance ? `+${provenance}` : ''}] ${state.action_reason}`,
     state.action_params?.discountPercent || null,
     now
   );
 
   await logDecision(caseId, 'action_selected', {
-    action: state.selected_action, nev: state.action_params?.nev, llmUsed: state.llm_used,
+    action: state.selected_action, nev: state.action_params?.nev,
+    aiAssisted: state.decision_ai_assisted, memoryInfluenced: state.memory_influenced,
   }, { actor: 'agent', amount: state.amount_at_risk });
+
+  // Reaching this node at all means policy_gate returned ALLOW (see
+  // graph.js's fixed edges) — the DENY path never gets here, it goes to
+  // policy_denied instead, which logs its own 'policy_rejected' entry.
+  await logDecision(caseId, 'policy_checked', {
+    allowed: true, modifications: state.policy_result?.modifications || [], aiAssisted: false,
+  }, { actor: 'agent' });
+
+  if (!state.decision_ai_assisted && state.decision_ai_fallback_reason) {
+    await logDecision(caseId, 'ai_unavailable', {
+      stage: 'decide_recovery_action', reason: state.decision_ai_fallback_reason,
+      message: 'AI reasoning unavailable. Deterministic recovery policy selected the safest eligible action.',
+    }, { actor: 'agent' });
+  }
+
+  // Findable, standalone proof point for "memory changed a decision" —
+  // deliberately a separate log entry from action_selected so it's easy
+  // to isolate in a demo (see /api/agent/cases/[id]'s memory panel).
+  if (state.memory_influenced) {
+    await logDecision(caseId, 'memory_applied', {
+      selectedAction: state.selected_action, reason: state.memory_reason,
+      message: `Previous recovery outcome influenced this decision: ${state.memory_reason}.`,
+    }, { actor: 'agent' });
+  }
 
   // Actions the agent is allowed to run autonomously are auto-approved here
   // (mirroring the dashboard's manual "Approve & Dispatch" flow); anything
