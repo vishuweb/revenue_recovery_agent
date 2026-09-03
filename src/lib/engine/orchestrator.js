@@ -9,6 +9,7 @@ import { deterministicFallback } from './fallback.js';
 import { classifyAttribution } from './attribution.js';
 import { logDecision } from './observability.js';
 import { getPaymentProvider, getSimulationProvider } from '../providers/provider.js';
+import { ensureCustomer } from '../db/customers.js';
 
 /**
  * Process a failed payment — idempotent.
@@ -26,37 +27,18 @@ export async function processFailedPayment(paymentId) {
     await logDecision(existingCase.id, 'idempotency_skip', { key: paymentId, reason: 'Recovery case already exists' });
     return { caseId: existingCase.id, actionId: null, decision: null, skipped: true };
   }
-  
-  let customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(payment.customer_id);
-  if (!customer) {
-    // Auto-create customer record if not present so recovery pipeline never halts
-    const now = new Date().toISOString();
-    customer = {
-      id: payment.customer_id || `cust_${uuidv4().substring(0, 8)}`,
-      name: 'Direct Customer',
-      email: `${payment.customer_id || 'customer'}@example.com`,
-      plan: 'starter',
-      mrr: payment.amount || 50000,
-      lifetime_value: (payment.amount || 50000) * 3,
-      payment_method: payment.method || 'card',
-      risk_score: 0.3,
-      total_payments: 1,
-      successful_payments: 1,
-      failed_payments: 0,
-      discount_affinity: 0.5,
-      avg_order_value: payment.amount || 50000,
-      opted_out: 0,
-      intervention_count: 0
-    };
-    await db.prepare(`
-      INSERT INTO customers (
-        id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
-        risk_score, total_payments, successful_payments, failed_payments,
-        discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
-      ) VALUES (?, ?, ?, null, 'Direct Account', 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
-    `).run(customer.id, customer.name, customer.email, customer.mrr, customer.lifetime_value, customer.payment_method, customer.avg_order_value, now, now);
+
+  // Optional LangGraph agent pipeline — additive, off by default. When enabled,
+  // the bounded autonomous agent (detect -> analyze -> decide -> policy ->
+  // execute -> observe -> learn) handles this case instead of the
+  // deterministic steps below. See lib/agent/graph.js. Dynamic import keeps
+  // LangGraph/Ollama out of the default bundle and request path entirely.
+  if (process.env.RECOVERY_ENGINE === 'agent') {
+    const { runRecoveryAgent } = await import('../agent/graph.js');
+    return runRecoveryAgent(paymentId);
   }
+
+  const customer = await ensureCustomer(db, { customerId: payment.customer_id, amount: payment.amount, method: payment.method });
 
   const classification = classifyFailure(payment.failure_reason, payment.failure_source);
   
@@ -163,35 +145,7 @@ export async function processEvent(eventId) {
     return { caseId: null, actionId: null, decision: null, skipped: true };
   }
 
-  let customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(event.customer_id);
-  if (!customer) {
-    const now = new Date().toISOString();
-    customer = {
-      id: event.customer_id || `cust_${uuidv4().substring(0, 8)}`,
-      name: 'Direct Customer',
-      email: `${event.customer_id || 'customer'}@example.com`,
-      plan: 'starter',
-      mrr: event.amount || 50000,
-      lifetime_value: (event.amount || 50000) * 3,
-      payment_method: 'card',
-      risk_score: 0.3,
-      total_payments: 1,
-      successful_payments: 1,
-      failed_payments: 0,
-      discount_affinity: 0.5,
-      avg_order_value: event.amount || 50000,
-      opted_out: 0,
-      intervention_count: 0
-    };
-    await db.prepare(`
-      INSERT INTO customers (
-        id, name, email, phone, company, plan, mrr, lifetime_value, payment_method,
-        risk_score, total_payments, successful_payments, failed_payments,
-        discount_affinity, avg_order_value, opted_out, intervention_count, created_at, updated_at
-      ) VALUES (?, ?, ?, null, 'Direct Account', 'starter', ?, ?, ?, 0.3, 1, 1, 0, 0.5, ?, 0, 0, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at
-    `).run(customer.id, customer.name, customer.email, customer.mrr, customer.lifetime_value, customer.payment_method, customer.avg_order_value, now, now);
-  }
+  const customer = await ensureCustomer(db, { customerId: event.customer_id, amount: event.amount, method: 'card' });
 
   const metadata = event.metadata ? JSON.parse(event.metadata) : {};
   const classification = classifyEvent(event.event_type, metadata);
