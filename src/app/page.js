@@ -43,6 +43,16 @@ export default function DashboardPage() {
   const [segmentedView, setSegmentedView] = useState('telemetry');
   const [selectedCaseForAction, setSelectedCaseForAction] = useState(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [agentMetrics, setAgentMetrics] = useState(null);
+
+  const fetchAgentMetrics = async () => {
+    try {
+      const res = await fetch('/api/agent/metrics');
+      if (res.ok) setAgentMetrics(await res.json());
+    } catch (e) {
+      // Purely additive panel — a failure here should never affect the rest of the dashboard.
+    }
+  };
 
   const fetchDashboard = async () => {
     try {
@@ -61,8 +71,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboard();
+    fetchAgentMetrics();
     const interval = setInterval(fetchDashboard, 10000);
-    return () => clearInterval(interval);
+    const agentInterval = setInterval(fetchAgentMetrics, 10000);
+    return () => { clearInterval(interval); clearInterval(agentInterval); };
   }, []);
 
   const handleCopyId = (e, id) => {
@@ -309,6 +321,38 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Autonomous Agent (LangGraph + Ollama) — additive, only shown once the agent has processed at least one case */}
+      {agentMetrics?.enabled && (
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + Ollama)</h3>
+            <span className="badge primary">{agentMetrics.casesProcessed} case(s) processed</span>
+          </div>
+          <div className="grid-cols-4">
+            <div className="card stat-card">
+              <div className="stat-header"><span className="stat-label">Agent Revenue Recovered</span></div>
+              <span className="stat-value" style={{ color: '#00FFF5' }}>{formatCurrency(agentMetrics.totalRecovered)}</span>
+              <div className="stat-footer"><span>of {formatCurrency(agentMetrics.totalRevenueAtRisk)} at risk</span></div>
+            </div>
+            <div className="card stat-card">
+              <div className="stat-header"><span className="stat-label">Agent Recovery Rate</span></div>
+              <span className="stat-value" style={{ color: '#00FFF5' }}>{(agentMetrics.recoveryRate || 0).toFixed(1)}%</span>
+              <div className="stat-footer"><span>{agentMetrics.recoveredCount} recovered automatically</span></div>
+            </div>
+            <div className="card stat-card">
+              <div className="stat-header"><span className="stat-label">Escalations to Human</span></div>
+              <span className="stat-value" style={{ color: '#fbbf24' }}>{agentMetrics.escalatedCount}</span>
+              <div className="stat-footer"><span>{agentMetrics.stoppedCount} stopped by policy/engine</span></div>
+            </div>
+            <div className="card stat-card">
+              <div className="stat-header"><span className="stat-label">Avg. Attempts per Case</span></div>
+              <span className="stat-value">{(agentMetrics.avgAttempts || 0).toFixed(1)}</span>
+              <div className="stat-footer"><span>{agentMetrics.automaticActions} autonomous actions taken</span></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Analytics Breakdown Grid */}
       <div className="grid-cols-2" style={{ marginBottom: '24px' }}>

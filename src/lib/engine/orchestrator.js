@@ -473,9 +473,17 @@ export async function processRecoveryOutcome(caseId, paymentResult) {
   }
 
   if (paymentResult.success) {
-    // Determine attribution
+    // Determine attribution. classifyAttribution() expects the case as it
+    // will look *after* recovery (status/recovered_amount/resolved_at) —
+    // `caseData` here is still the pre-update row, so project the fields
+    // the transaction below is about to set rather than passing it as-is
+    // (otherwise every case is misclassified as 'unrecovered').
     const actions = await db.prepare('SELECT * FROM recovery_actions WHERE case_id = ?').all(caseId);
-    const attribution = classifyAttribution(caseData, actions);
+    const resolvedAt = new Date().toISOString();
+    const attribution = classifyAttribution(
+      { ...caseData, status: 'recovered', recovered_amount: caseData.amount_at_risk, resolved_at: resolvedAt },
+      actions
+    );
 
     const updateRecovery = db.transaction(async (txDb) => {
       const d = txDb || db;

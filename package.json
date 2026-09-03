@@ -7,8 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test tests/engine.test.mjs && node tests/comprehensive.test.mjs",
-    "test:unit": "node --test tests/engine.test.mjs"
+    "test": "node --test tests/engine.test.mjs tests/agent.test.mjs && node tests/comprehensive.test.mjs",
+    "test:unit": "node --test tests/engine.test.mjs tests/agent.test.mjs",
+    "test:agent": "node --test tests/agent.test.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.3.0",

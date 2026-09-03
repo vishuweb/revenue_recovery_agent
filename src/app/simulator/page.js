@@ -465,6 +465,78 @@ export default function SimulatorPage() {
         </div>
       </div>
 
+      {/* Autonomous LangGraph Agent */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff', marginBottom: '4px' }}>
+          Autonomous Agent (LangGraph + Ollama)
+        </h3>
+        <p style={{ fontSize: '12.5px', color: '#8e9ba9', marginBottom: '14px' }}>
+          Runs the bounded agent loop — detect → analyze → score → decide → policy gate → execute → observe → learn — with its own audit trail and long-term memory, instead of the deterministic pipeline above.
+        </p>
+        <div className="grid-cols-2">
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <h3 className="card-title">
+                  <IconZap size={16} color="#00FFF5" />
+                  <span>Run Single Case via Agent</span>
+                </h3>
+                <p className="card-subtitle">Create one failed payment and hand it to the LangGraph agent, start to finish</p>
+              </div>
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => handleCommand('trigger_agent_case')}
+              disabled={loading}
+            >
+              <IconZap size={14} />
+              <span>Run via Agent</span>
+            </button>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <h3 className="card-title">
+                  <IconSimulator size={16} color="#00FFF5" />
+                  <span>Batch Agent Simulation</span>
+                </h3>
+                <p className="card-subtitle">20 varied cases through the agent — measurable recovered revenue, clearly labeled simulated</p>
+              </div>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={async () => {
+                setLoading(true);
+                toast.info('Running 20 cases through the autonomous agent...');
+                try {
+                  const res = await fetch('/api/agent/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ count: 20 })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    setLastResult(data);
+                    toast.success(`Batch complete: ${data.summary?.recoveredCount || 0} recovered, ${data.summary?.escalatedCount || 0} escalated, ${data.summary?.stoppedCount || 0} stopped`);
+                  } else {
+                    toast.error(data.error || 'Batch simulation failed');
+                  }
+                } catch {
+                  toast.error('Network failure connecting to agent batch endpoint');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+            >
+              <IconRefresh size={14} />
+              <span>Run 20-Case Batch</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Simulation Result Output */}
       {lastResult && (
         <div className="card card-elevated">
@@ -473,10 +545,10 @@ export default function SimulatorPage() {
               <IconSuccess size={16} color="#00FFF5" />
               <span>Simulation Execution Telemetry</span>
             </h3>
-            {lastResult.case?.id && (
+            {(lastResult.case?.id || lastResult.caseId) && (
               <button
                 className="btn btn-primary btn-sm"
-                onClick={() => router.push(`/cases/${lastResult.case.id}`)}
+                onClick={() => router.push(`/cases/${lastResult.case?.id || lastResult.caseId}`)}
               >
                 <span>View Generated Case</span>
                 <IconChevronRight size={13} />

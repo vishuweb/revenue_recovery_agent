@@ -32,6 +32,7 @@ export default function CaseDetailPage({ params }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [agentData, setAgentData] = useState(null);
 
   const fetchCase = async () => {
     try {
@@ -50,8 +51,21 @@ export default function CaseDetailPage({ params }) {
     }
   };
 
+  const fetchAgentData = async () => {
+    try {
+      const res = await fetch(`/api/agent/cases/${id}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.isAgentCase) setAgentData(json);
+      }
+    } catch (e) {
+      // The agent view is purely additive — silently skip if unavailable.
+    }
+  };
+
   useEffect(() => {
     fetchCase();
+    fetchAgentData();
   }, [id]);
 
   const handleRazorpayCheckout = async () => {
@@ -530,6 +544,56 @@ export default function CaseDetailPage({ params }) {
           </div>
         </div>
       </div>
+
+      {/* Autonomous Agent Insights — only rendered for cases the LangGraph agent handled */}
+      {agentData && (
+        <div className="card card-elevated" style={{ marginBottom: '20px' }}>
+          <div className="card-header">
+            <h3 className="card-title">
+              <IconZap size={16} color="#00FFF5" />
+              <span>Autonomous Agent Insights</span>
+            </h3>
+            <span className="badge primary">LangGraph + Ollama</span>
+          </div>
+
+          <div className="grid-cols-3" style={{ marginBottom: '16px' }}>
+            <div>
+              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Loop Result</div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', marginTop: '2px' }}>
+                {agentData.loopSummary?.outcome || 'In progress'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Stop Reason</div>
+              <div style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '2px' }}>
+                {agentData.loopSummary?.stopReason || '—'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Attempts / Iterations</div>
+              <div className="font-mono" style={{ fontSize: '14px', fontWeight: 700, color: '#00FFF5', marginTop: '2px' }}>
+                {agentData.loopSummary?.attempts ?? 0} / {agentData.loopSummary?.iterations ?? 0}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#181d26', border: '1px solid #3B3E47', borderRadius: 'var(--border-radius-card)', padding: '14px' }}>
+            <h4 style={{ fontSize: '11.5px', fontWeight: 700, color: '#8e9ba9', marginBottom: '8px', textTransform: 'uppercase' }}>
+              What the agent remembered about this customer
+            </h4>
+            <p style={{ fontSize: '12.5px', color: '#cbd5e1', lineHeight: 1.6 }}>
+              {agentData.memory?.sampleSize > 0
+                ? `${agentData.memory.sampleSize} prior interaction(s). Preferred channel: ${agentData.memory.preferredChannel || 'unknown'}. Previously successful: [${(agentData.memory.priorSuccessfulActions || []).join(', ') || 'none yet'}]. Previously failed: [${(agentData.memory.priorFailedActions || []).join(', ') || 'none'}].`
+                : 'No prior history for this customer — this was a cold-start decision based on category-wide strategy effectiveness.'}
+            </p>
+            {agentData.memory?.topStrategiesForCategory?.length > 0 && (
+              <p style={{ fontSize: '12px', color: '#8e9ba9', marginTop: '8px' }}>
+                Category-wide top strategies for &apos;{agentData.memory.failureCategory}&apos;: {agentData.memory.topStrategiesForCategory.map((s) => `${s.action} (${s.successRate}%)`).join(', ')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Recovery Timeline & Notes Grid */}
       <div className="grid-cols-2" style={{ marginBottom: '20px' }}>

@@ -92,6 +92,29 @@ export async function POST(request) {
       return NextResponse.json({ success: true, cases })
     }
 
+    // Generate a failed payment for a random customer and run it through the
+    // LangGraph autonomous agent (detect -> analyze -> decide -> policy ->
+    // execute -> observe -> learn) instead of the deterministic pipeline —
+    // additive path, does not touch processFailedPayment's default behavior.
+    if (command === 'trigger_agent_case') {
+      const { runRecoveryAgent } = await import('@/lib/agent/graph')
+      const failureReasons = ['insufficient_funds', 'gateway_error', 'card_declined', 'payment_timed_out', 'authentication_failed', 'card_expired']
+      const customer = await db.prepare('SELECT * FROM customers ORDER BY RANDOM() LIMIT 1').get()
+      if (!customer) return NextResponse.json({ error: 'No customers found — seed the database first' }, { status: 404 })
+
+      const reason = params?.failureReason || failureReasons[Math.floor(Math.random() * failureReasons.length)]
+      const amount = params?.amount || customer.mrr || 25000
+      const paymentId = uuidv4()
+
+      await db.prepare(`
+        INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
+        VALUES (?, ?, ?, 'INR', 'failed', ?, ?, 'agent_simulator', datetime('now'), datetime('now'))
+      `).run(paymentId, customer.id, amount, customer.payment_method || 'card', reason)
+
+      const result = await runRecoveryAgent(paymentId)
+      return NextResponse.json({ success: true, paymentId, customer: { id: customer.id, name: customer.name }, ...result })
+    }
+
     // Execute Pipeline Sweep — triggered by "Execute Pipeline Sweep" button in the simulator UI.
     if (command === 'run_cron') {
       const results = await processPendingAutomations()

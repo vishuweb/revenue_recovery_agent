@@ -1,4 +1,5 @@
 import { getDb } from '../../db/database.js';
+import { logDecision } from '../../engine/observability.js';
 
 /**
  * evaluate_outcome — the loop's only stopping-rule authority. Every path
@@ -38,15 +39,20 @@ export async function evaluateOutcome(state) {
     stopReason = 'recovery_failed_not_retryable';
   }
 
-  // Close out the case for any terminal, non-recovered, non-escalated
-  // disposition reached via the retry loop itself (policy_denied already
-  // closes cases it stops directly).
-  if (!nextAction && state.caseId && state.outcome !== 'RECOVERED' && state.outcome !== 'ESCALATE' && state.outcome !== 'STOPPED') {
-    const db = getDb();
-    await db.prepare(`
-      UPDATE recovery_cases SET status = 'stopped', resolved_at = ?, updated_at = ?
-      WHERE id = ? AND status IN ('open', 'in_progress')
-    `).run(new Date().toISOString(), new Date().toISOString(), state.caseId);
+  if (!nextAction) {
+    const entityId = state.caseId || state.paymentId || 'unknown';
+    await logDecision(entityId, 'agent_stopped', { outcome: state.outcome, stopReason, attempts, iterations: iteration }, { actor: 'agent' });
+
+    // Close out the case for any terminal, non-recovered, non-escalated
+    // disposition reached via the retry loop itself (policy_denied already
+    // closes cases it stops directly).
+    if (state.caseId && state.outcome !== 'RECOVERED' && state.outcome !== 'ESCALATE' && state.outcome !== 'STOPPED') {
+      const db = getDb();
+      await db.prepare(`
+        UPDATE recovery_cases SET status = 'stopped', resolved_at = ?, updated_at = ?
+        WHERE id = ? AND status IN ('open', 'in_progress')
+      `).run(new Date().toISOString(), new Date().toISOString(), state.caseId);
+    }
   }
 
   return {
