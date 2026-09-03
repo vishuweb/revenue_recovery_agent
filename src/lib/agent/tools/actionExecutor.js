@@ -131,6 +131,9 @@ export async function executeActionTool(actionId) {
     action: result.result?.action || null,
     externalReference: result.result?.providerPaymentId || result.result?.url || null,
     message: result.result?.msg || result.reason || (success ? 'Action completed' : `Action ${result.status}`),
-    error: result.status === 'error' ? result.error : (result.status === 'skipped' ? result.reason : null),
+    // `error` doubles as a machine-readable non-success status code
+    // (e.g. 'pending_approval', 'dead_letter', 'skipped') so callers can
+    // branch without re-deriving it from the message string.
+    error: success ? null : (result.status === 'error' ? result.error : result.status),
   });
 }
