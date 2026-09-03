@@ -12,26 +12,41 @@ import { getDb } from '../../../../lib/db/database.js';
  * (no separate DB status exists for "exhausted retries" vs "policy
  * stopped") — this endpoint tells them apart using the outcome recorded
  * in each case's `decision.agent_stopped` audit entry instead.
+ *
+ * `entity_id` on an agent audit row is a case id once a case exists, but
+ * `policy_denied` can log against a *payment* id when policy rejects the
+ * very first candidate action before any case was ever created (e.g.
+ * CUSTOMER_FATIGUE) — see lib/agent/nodes/policyDenied.js. Those rows must
+ * not be counted as cases: the case id list is derived from an actual
+ * recovery_cases match, not raw DISTINCT entity_id values.
  */
 export async function GET() {
   try {
     const db = getDb();
 
-    const agentCaseRows = await db.prepare(`
+    const agentEntityRows = await db.prepare(`
       SELECT DISTINCT entity_id as id FROM audit_log WHERE actor = 'agent' AND entity_type = 'case'
     `).all();
-    const caseIds = (agentCaseRows || []).map((r) => r.id);
+    const candidateIds = (agentEntityRows || []).map((r) => r.id);
 
-    if (caseIds.length === 0) {
+    if (candidateIds.length === 0) {
       return NextResponse.json({ enabled: false, casesProcessed: 0 });
     }
 
+    const candidatePlaceholders = candidateIds.map(() => '?').join(',');
+    const cases = await db.prepare(`SELECT * FROM recovery_cases WHERE id IN (${candidatePlaceholders})`).all(...candidateIds);
+
+    if (cases.length === 0) {
+      return NextResponse.json({ enabled: false, casesProcessed: 0 });
+    }
+
+    const caseIds = cases.map((c) => c.id);
     const placeholders = caseIds.map(() => '?').join(',');
-    const cases = await db.prepare(`SELECT * FROM recovery_cases WHERE id IN (${placeholders})`).all(...caseIds);
 
     const stoppedEntries = await db.prepare(`
-      SELECT entity_id, details FROM audit_log WHERE actor = 'agent' AND event_type = 'decision.agent_stopped'
-    `).all();
+      SELECT entity_id, details FROM audit_log
+      WHERE actor = 'agent' AND event_type = 'decision.agent_stopped' AND entity_id IN (${placeholders})
+    `).all(...caseIds);
     // Keep only the latest agent_stopped entry per case (a paused-then-resumed
     // case can accumulate several before finally settling).
     const latestByCase = new Map();
@@ -69,6 +84,7 @@ export async function GET() {
       totalRevenueAtRisk,
       totalRecovered,
       recoveryRate: cases.length > 0 ? (recoveredCount / cases.length) * 100 : 0,
+      revenueRecoveryRate: totalRevenueAtRisk > 0 ? (totalRecovered / totalRevenueAtRisk) * 100 : 0,
       recoveredCount,
       escalatedCount,
       stoppedCount,

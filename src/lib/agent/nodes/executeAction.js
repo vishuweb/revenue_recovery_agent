@@ -11,6 +11,14 @@ import { executeActionTool } from '../tools/actionExecutor.js';
 const PAUSE_WORTHY_ACTIONS = new Set(['payment_link', 'email', 'sms', 'cart_reminder', 'discount', 'free_shipping', 'targeted_campaign']);
 const RECHECK_DELAY_MS = parseInt(process.env.AGENT_RECHECK_DELAY_MS, 10) || 30 * 60 * 1000;
 
+/** Honest phrasing — "disabled by design for a batch run" is not the same claim as "the model was unreachable". */
+function describeAiSkip(stage, reason, fallbackMessage) {
+  if (reason === 'llm_disabled_for_batch_run') {
+    return `AI reasoning intentionally skipped for this batch run (performance) — deterministic policy handled ${stage.replace(/_/g, ' ')}.`;
+  }
+  return fallbackMessage;
+}
+
 /**
  * execute_action — reached only after policy_gate ALLOWs. Creates the
  * recovery_cases row on the first pass (identical shape to what
@@ -59,7 +67,7 @@ export async function executeAction(state) {
     if (!state.analysis_ai_assisted && state.analysis_ai_fallback_reason) {
       await logDecision(caseId, 'ai_unavailable', {
         stage: 'analyze_failure', reason: state.analysis_ai_fallback_reason,
-        message: 'AI reasoning unavailable. Deterministic classifier used instead — no unsafe action was taken.',
+        message: describeAiSkip('analyze_failure', state.analysis_ai_fallback_reason, 'AI reasoning unavailable. Deterministic classifier used instead — no unsafe action was taken.'),
       }, { actor: 'agent' });
     }
     await logDecision(caseId, 'predicted', { probability: state.recovery_probability, aiAssisted: false }, { actor: 'agent' });
@@ -107,7 +115,7 @@ export async function executeAction(state) {
   if (!state.decision_ai_assisted && state.decision_ai_fallback_reason) {
     await logDecision(caseId, 'ai_unavailable', {
       stage: 'decide_recovery_action', reason: state.decision_ai_fallback_reason,
-      message: 'AI reasoning unavailable. Deterministic recovery policy selected the safest eligible action.',
+      message: describeAiSkip('decide_recovery_action', state.decision_ai_fallback_reason, 'AI reasoning unavailable. Deterministic recovery policy selected the safest eligible action.'),
     }, { actor: 'agent' });
   }
 
@@ -115,9 +123,13 @@ export async function executeAction(state) {
   // deliberately a separate log entry from action_selected so it's easy
   // to isolate in a demo (see /api/agent/cases/[id]'s memory panel).
   if (state.memory_influenced) {
+    const adj = state.memory_adjustment;
     await logDecision(caseId, 'memory_applied', {
       selectedAction: state.selected_action, reason: state.memory_reason,
-      message: `Previous recovery outcome influenced this decision: ${state.memory_reason}.`,
+      adjustment: adj,
+      message: adj
+        ? `Previous recovery outcome influenced this decision: ${state.memory_reason}. Probability ${(adj.originalProbability * 100).toFixed(0)}% → ${(adj.adjustedProbability * 100).toFixed(0)}%, NEV ₹${(adj.originalNev / 100).toFixed(0)} → ₹${(adj.adjustedNev / 100).toFixed(0)}. Without memory, '${adj.rawWinnerWithoutMemory}' would have been selected instead of '${adj.newWinnerWithMemory}'.`
+        : `Previous recovery outcome influenced this decision: ${state.memory_reason}.`,
     }, { actor: 'agent' });
   }
 

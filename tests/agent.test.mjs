@@ -374,6 +374,21 @@ describe('LangGraph Recovery Agent', () => {
     const actionsBefore = await db.prepare('SELECT COUNT(*) as n FROM recovery_actions WHERE case_id = ?').get(first.caseId);
 
     const forced = await processPendingAgentResumptions({ force: true });
+    if (!forced.results.some((r) => r.caseId === first.caseId)) {
+      const caseRow = await db.prepare('SELECT * FROM recovery_cases WHERE id = ?').get(first.caseId);
+      const actionRows = await db.prepare('SELECT id, action_type, status, scheduled_at, requires_approval, approved_by, created_at FROM recovery_actions WHERE case_id = ? ORDER BY created_at ASC').all(first.caseId);
+      const latestActionCheck = await db.prepare(`
+        SELECT ra.id, ra.created_at, ra.scheduled_at, ra.requires_approval, ra.approved_by,
+          (SELECT MAX(created_at) FROM recovery_actions WHERE case_id = ?) as maxCreatedAt
+        FROM recovery_actions ra WHERE ra.case_id = ? ORDER BY ra.created_at DESC LIMIT 1
+      `).get(first.caseId, first.caseId);
+      console.log('[DIAG-26] decision=', JSON.stringify(first.decision));
+      console.log('[DIAG-26] caseRow=', JSON.stringify(caseRow));
+      console.log('[DIAG-26] actionRows=', JSON.stringify(actionRows));
+      console.log('[DIAG-26] latestActionCheck=', JSON.stringify(latestActionCheck));
+      console.log('[DIAG-26] forced.results=', JSON.stringify(forced.results));
+      console.log('[DIAG-26] forced.checked=', forced.checked);
+    }
     assert.ok(forced.results.some((r) => r.caseId === first.caseId), 'the paused case must be found and resumed when forced');
 
     const actionsAfter = await db.prepare('SELECT COUNT(*) as n FROM recovery_actions WHERE case_id = ?').get(first.caseId);

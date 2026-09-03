@@ -118,7 +118,9 @@ export async function decideRecoveryAction(state) {
 
   const positiveNevCandidates = rankedByAdjustedNev.filter((c) => c.nev > 0);
 
-  if (!allNegativeAdjusted && positiveNevCandidates.length > 0) {
+  if (!state.llm_enabled) {
+    decisionAiFallbackReason = decisionAiFallbackReason || 'llm_disabled_for_batch_run';
+  } else if (!allNegativeAdjusted && positiveNevCandidates.length > 0) {
     const memory = state.retrieved_memory || {};
     const llmResult = await getStructuredCompletion({
       systemPrompt: `You are a revenue-recovery strategist. Choose the single best action from the given list to recover a failed/at-risk payment. You may ONLY choose an action from the provided candidate list — any other answer is invalid. Respond ONLY with JSON matching: {"recommendedAction": one of the candidate actions, "reasoning": string, "confidence": number 0-1}.`,
@@ -161,6 +163,18 @@ export async function decideRecoveryAction(state) {
     decision_ai_fallback_reason: decisionAiFallbackReason,
     memory_influenced: memoryInfluenced,
     memory_reason: memoryInfluenced ? memoryReasonEntry.reason : null,
+    // Real numbers behind the reasoning text, for the case timeline's
+    // "candidate probabilities adjusted -> new ranking" step — never
+    // fabricated, straight from applyMemoryAdjustment's own computation.
+    memory_adjustment: memoryInfluenced ? {
+      action: memoryReasonEntry.action,
+      originalProbability: memoryReasonEntry.originalProbability,
+      adjustedProbability: memoryReasonEntry.adjustedProbability,
+      originalNev: memoryReasonEntry.originalNev,
+      adjustedNev: memoryReasonEntry.adjustedNev,
+      rawWinnerWithoutMemory: decision.action,
+      newWinnerWithMemory: deterministicTop.action,
+    } : null,
     audit_trail: [{
       phase: 'decide_recovery_action', at: new Date().toISOString(),
       summary: `Selected '${finalAction}' — ${decisionAiAssisted ? 'LLM-guided among policy-eligible options' : `deterministic NEV selection${memoryInfluenced ? ' (memory-adjusted)' : ''}${decisionAiFallbackReason ? ` (${decisionAiFallbackReason})` : ''}`}`,

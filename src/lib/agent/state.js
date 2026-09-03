@@ -70,6 +70,15 @@ export const AgentState = Annotation.Root({
   decision_ai_fallback_reason: Annotation({ reducer: overwrite, default: () => null }),
   memory_influenced: Annotation({ reducer: overwrite, default: () => false }),
   memory_reason: Annotation({ reducer: overwrite, default: () => null }),
+  memory_adjustment: Annotation({ reducer: overwrite, default: () => null }),
+
+  // When false, analyze_failure/decide_recovery_action skip the LLM call
+  // entirely (not just "fall back if it fails") — used by batch runs
+  // (see /api/agent/batch) so processing 100+ cases stays fast and never
+  // depends on a real Ollama instance being up. Individual runs (single
+  // "Run via Agent", real Razorpay webhooks) leave this true and do call
+  // the configured model when reachable.
+  llm_enabled: Annotation({ reducer: overwrite, default: () => true }),
 
   // ---- policy ------------------------------------------------------------
   policy_result: Annotation({ reducer: overwrite, default: () => null }),
@@ -95,7 +104,7 @@ export const AgentState = Annotation.Root({
 /**
  * Build the initial AgentState for a fresh run.
  * @param {import('./eventNormalizer.js').NormalizedEvent} event
- * @param {{ threadId?: string, maxAttempts?: number, maxIterations?: number }} [opts]
+ * @param {{ threadId?: string, maxAttempts?: number, maxIterations?: number, llmEnabled?: boolean }} [opts]
  */
 export function buildInitialState(event, opts = {}) {
   return {
@@ -105,6 +114,7 @@ export function buildInitialState(event, opts = {}) {
     event,
     max_attempts: opts.maxAttempts || 5,
     max_iterations: opts.maxIterations || 6,
+    llm_enabled: opts.llmEnabled !== false,
     timestamps: { startedAt: new Date().toISOString() },
     audit_trail: [{ phase: 'agent_started', at: new Date().toISOString(), summary: `Agent run started for ${event.eventType}` }],
   };

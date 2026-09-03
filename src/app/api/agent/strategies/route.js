@@ -13,6 +13,14 @@ import { getDb } from '../../../../lib/db/database.js';
  * status='recovered' — an approximation when multiple actions preceded a
  * recovery (the same approximation lib/engine/attribution.js already makes
  * explicit for the deterministic pipeline), not a claim of sole causation.
+ *
+ * The attempts count includes every TERMINAL action status — completed,
+ * failed, AND dead_letter — not just 'completed'. A failed retry is
+ * persisted with status='failed', never 'completed' (see
+ * lib/engine/orchestrator.js's executeRecoveryAction); counting only
+ * 'completed' rows would silently exclude every failed attempt and make
+ * whichever action never fails outright (retry) look like a tautological
+ * 100% success rate.
  */
 export async function GET() {
   try {
@@ -26,7 +34,7 @@ export async function GET() {
         SUM(CASE WHEN rc.status = 'recovered' THEN rc.recovered_amount ELSE 0 END) as recoveredAmount
       FROM recovery_actions ra
       JOIN recovery_cases rc ON ra.case_id = rc.id
-      WHERE ra.status = 'completed' AND ra.ai_reasoning LIKE '[Agent%'
+      WHERE ra.status IN ('completed', 'failed', 'dead_letter') AND ra.ai_reasoning LIKE '[Agent%'
       GROUP BY ra.action_type
       ORDER BY recovered DESC, attempts DESC
     `).all();

@@ -400,31 +400,31 @@ export default function DashboardPage() {
                 <div className="stat-footer"><span>of {formatCurrency(agentMetrics.totalRevenueAtRisk)} at risk</span></div>
               </div>
               <div className="card stat-card">
-                <div className="stat-header"><span className="stat-label">Agent Recovery Rate</span></div>
+                <div className="stat-header"><span className="stat-label">Revenue Recovery Rate</span></div>
+                <span className="stat-value" style={{ color: '#00FFF5' }}>{(agentMetrics.revenueRecoveryRate || 0).toFixed(1)}%</span>
+                <div className="stat-footer"><span>rupees recovered ÷ rupees at risk</span></div>
+              </div>
+              <div className="card stat-card">
+                <div className="stat-header"><span className="stat-label">Case Recovery Rate</span></div>
                 <span className="stat-value" style={{ color: '#00FFF5' }}>{(agentMetrics.recoveryRate || 0).toFixed(1)}%</span>
-                <div className="stat-footer"><span>{agentMetrics.recoveredCount} of {agentMetrics.casesProcessed} recovered</span></div>
+                <div className="stat-footer"><span>{agentMetrics.recoveredCount} of {agentMetrics.casesProcessed} cases recovered</span></div>
               </div>
               <div className="card stat-card">
                 <div className="stat-header"><span className="stat-label">Escalations to Human</span></div>
                 <span className="stat-value" style={{ color: '#fbbf24' }}>{agentMetrics.escalatedCount}</span>
                 <div className="stat-footer"><span>{agentMetrics.stoppedCount} stopped by policy</span></div>
               </div>
+            </div>
+            <div className="grid-cols-4" style={{ marginBottom: '16px' }}>
               <div className="card stat-card">
                 <div className="stat-header"><span className="stat-label">Failed Cases</span></div>
                 <span className="stat-value" style={{ color: '#fb7185' }}>{agentMetrics.failedCount}</span>
                 <div className="stat-footer"><span>retries exhausted, not recoverable</span></div>
               </div>
-            </div>
-            <div className="grid-cols-4" style={{ marginBottom: '16px' }}>
               <div className="card stat-card">
                 <div className="stat-header"><span className="stat-label">Automated Actions</span></div>
                 <span className="stat-value">{agentMetrics.automaticActions}</span>
                 <div className="stat-footer"><span>decisions executed autonomously</span></div>
-              </div>
-              <div className="card stat-card">
-                <div className="stat-header"><span className="stat-label">Avg. Attempts / Case</span></div>
-                <span className="stat-value">{(agentMetrics.avgAttempts || 0).toFixed(1)}</span>
-                <div className="stat-footer"><span>reasoning cycles before stopping</span></div>
               </div>
               <div className="card stat-card">
                 <div className="stat-header"><span className="stat-label">Avg. Recovery Time</span></div>

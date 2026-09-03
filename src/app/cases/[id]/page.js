@@ -573,7 +573,22 @@ export default function CaseDetailPage({ params }) {
 
           {agentData.memoryProof && (
             <div style={{ background: 'rgba(0,255,245,0.06)', border: '1px solid rgba(0,255,245,0.25)', borderRadius: 'var(--border-radius-card)', padding: '12px 14px', marginBottom: '16px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#00FFF5', textTransform: 'uppercase', marginBottom: '4px' }}>Previous recovery outcome influenced this decision</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#00FFF5', textTransform: 'uppercase', marginBottom: '8px' }}>Previous recovery outcome influenced this decision</div>
+              {agentData.memoryProof.adjustment && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', fontSize: '12px' }}>
+                  <span className="badge muted">Memory retrieved</span>
+                  <span style={{ color: '#5f6d7e' }}>→</span>
+                  <span className="badge" style={{ background: 'rgba(0,255,245,0.12)', color: '#00FFF5' }}>
+                    {agentData.memoryProof.adjustment.action}: {(agentData.memoryProof.adjustment.originalProbability * 100).toFixed(0)}% → {(agentData.memoryProof.adjustment.adjustedProbability * 100).toFixed(0)}%
+                  </span>
+                  <span style={{ color: '#5f6d7e' }}>→</span>
+                  <span className="badge" style={{ background: 'rgba(0,255,245,0.12)', color: '#00FFF5' }}>
+                    NEV ₹{(agentData.memoryProof.adjustment.originalNev / 100).toFixed(0)} → ₹{(agentData.memoryProof.adjustment.adjustedNev / 100).toFixed(0)}
+                  </span>
+                  <span style={{ color: '#5f6d7e' }}>→</span>
+                  <span className="badge primary">New ranking: &apos;{agentData.memoryProof.adjustment.newWinnerWithMemory}&apos; over &apos;{agentData.memoryProof.adjustment.rawWinnerWithoutMemory}&apos;</span>
+                </div>
+              )}
               <p style={{ fontSize: '12.5px', color: '#cbd5e1', margin: 0 }}>{agentData.memoryProof.message}</p>
             </div>
           )}

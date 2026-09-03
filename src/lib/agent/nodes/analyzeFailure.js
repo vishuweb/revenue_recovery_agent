@@ -13,11 +13,17 @@ import { FailureAnalysisSchema } from '../schemas.js';
 export async function analyzeFailure(state) {
   const classification = classifyFailure(state.failure_reason, state.payment?.failure_source);
 
-  const llmResult = await getStructuredCompletion({
-    systemPrompt: 'You are a payments analyst. Given a payment failure reason and category, write one concise sentence explaining the likely root cause for a support dashboard. Respond ONLY with JSON matching: {"rootCause": string, "category": one of ["temporary","behavioral","permanent","abandonment","opportunity","unknown"], "confidence": number 0-1}.',
-    userPrompt: `Failure reason: ${state.failure_reason || 'unknown'}\nDeterministic category: ${classification.category}\nBase recovery probability: ${classification.baseRecoveryProbability}\nCustomer plan: ${state.customer?.plan || 'unknown'}`,
-    schema: FailureAnalysisSchema,
-  });
+  // Batch runs (see /api/agent/batch) explicitly disable the LLM so 100+
+  // cases stay fast and never depend on a live model — this is a real
+  // skip, not a fallback-after-trying, so the timeline must say so
+  // honestly rather than implying a call was attempted.
+  const llmResult = state.llm_enabled
+    ? await getStructuredCompletion({
+        systemPrompt: 'You are a payments analyst. Given a payment failure reason and category, write one concise sentence explaining the likely root cause for a support dashboard. Respond ONLY with JSON matching: {"rootCause": string, "category": one of ["temporary","behavioral","permanent","abandonment","opportunity","unknown"], "confidence": number 0-1}.',
+        userPrompt: `Failure reason: ${state.failure_reason || 'unknown'}\nDeterministic category: ${classification.category}\nBase recovery probability: ${classification.baseRecoveryProbability}\nCustomer plan: ${state.customer?.plan || 'unknown'}`,
+        schema: FailureAnalysisSchema,
+      })
+    : { ok: false, reason: 'llm_disabled_for_batch_run' };
 
   const explanation = llmResult.ok
     ? llmResult.data.rootCause
