@@ -32,7 +32,7 @@ export async function updateMemory(state) {
 
   if (state.selected_action && state.customerId) {
     const success = state.outcome === 'RECOVERED' || Boolean(state.execution_result?.success);
-    recordOutcome({
+    await recordOutcome({
       customerId: state.customerId,
       caseId: state.caseId,
       failureCategory: state.failure_category,

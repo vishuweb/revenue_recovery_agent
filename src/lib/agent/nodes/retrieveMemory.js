@@ -7,7 +7,7 @@ import { getRelevantRecoveryPatterns } from '../../memory/memoryService.js';
  * handful of recent facts and a top-5 strategy list, never a raw dump.
  */
 export async function retrieveMemory(state) {
-  const patterns = getRelevantRecoveryPatterns(state.customerId, state.failure_category);
+  const patterns = await getRelevantRecoveryPatterns(state.customerId, state.failure_category);
 
   return {
     retrieved_memory: patterns,

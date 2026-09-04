@@ -26,6 +26,23 @@ const STEP_DEFINITIONS = [
   { key: 'next_or_stop', label: 'Next action / stopping reason', match: (e) => ['decision.agent_stopped', 'decision.agent_resumed'].includes(e.event_type) },
 ];
 
+// Maps an executed action_type back to the agent tool that actually ran it
+// (lib/agent/tools/actionExecutor.js) — shown on the "Action executed" step
+// so a reader can see this wasn't a black box: one named, bounded function
+// was called, nothing arbitrary.
+const TOOL_BY_ACTION_TYPE = {
+  retry: 'retryPayment',
+  payment_link: 'createPaymentLink',
+  email: 'sendRecoveryNotification',
+  sms: 'sendRecoveryNotification',
+  cart_reminder: 'sendRecoveryNotification',
+  escalate: 'escalateCase',
+  discount: 'recordRecoveryAction',
+  free_shipping: 'recordRecoveryAction',
+  targeted_campaign: 'recordRecoveryAction',
+  no_action: 'recordRecoveryAction',
+};
+
 function buildSteps(auditRows) {
   const enriched = auditRows.map((e) => {
     let details = null;
@@ -47,6 +64,7 @@ function buildSteps(auditRows) {
         aiAssisted,
         deterministic: !aiAssisted,
         actor: entry.actor,
+        tool: def.key === 'action_executed' ? (TOOL_BY_ACTION_TYPE[entry._details?.actionType] || null) : null,
         data: entry._details,
       });
     }
@@ -74,7 +92,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ case: caseRecord, isAgentCase: false, timeline: [], steps: [], memory: null, loopSummary: null });
     }
 
-    const memory = getRelevantRecoveryPatterns(caseRecord.customer_id, caseRecord.failure_category);
+    const memory = await getRelevantRecoveryPatterns(caseRecord.customer_id, caseRecord.failure_category);
     const steps = buildSteps(fullTimeline);
 
     const stoppedEntry = [...fullTimeline].reverse().find((e) => e.event_type === 'decision.agent_stopped');

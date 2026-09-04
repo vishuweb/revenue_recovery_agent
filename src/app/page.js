@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { RevenueChart, FailureReasonsChart, StatusPieChart, ProbabilityBar } from './components/Charts';
 import { CustomerAvatar } from './components/CustomerAvatar';
 import { ActionModal } from './components/ActionModal';
+import { AgentExplainer } from './components/AgentExplainer';
 import { useToast } from './components/ToastContext';
 import {
   IconRupee,
@@ -365,7 +366,7 @@ export default function DashboardPage() {
       <div style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + Ollama)</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {agentMetrics?.enabled && <span className="badge primary">{agentMetrics.casesProcessed} case(s) processed</span>}
             <button className="btn btn-primary btn-sm" onClick={runRevenueRecoveryDemo} disabled={demoRunning}>
               <IconZap size={14} />
@@ -390,6 +391,8 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        <AgentExplainer />
 
         {agentMetrics?.enabled ? (
           <>

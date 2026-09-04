@@ -556,6 +556,14 @@ export default function CaseDetailPage({ params }) {
             <span className="badge primary">LangGraph + Ollama</span>
           </div>
 
+          <p style={{ fontSize: '12px', color: '#8e9ba9', marginTop: '-8px', marginBottom: '16px', lineHeight: 1.5 }}>
+            This case was handled autonomously: every row below is a real step the agent took, in order, each tagged{' '}
+            <span style={{ color: '#94a3b8', fontWeight: 600 }}>Deterministic</span> (fixed business rules — never
+            overridable) or <span style={{ color: '#fbbf24', fontWeight: 600 }}>AI-assisted</span> (Ollama reasoned
+            about it, within pre-approved limits). See <Link href="/" style={{ color: '#00FFF5' }}>the dashboard</Link>{' '}
+            for how the whole loop and its tools fit together.
+          </p>
+
           <div className="grid-cols-3" style={{ marginBottom: '16px' }}>
             <div>
               <div style={{ fontSize: '11px', color: '#8e9ba9', fontWeight: 600, textTransform: 'uppercase' }}>Loop Result</div>
@@ -607,6 +615,11 @@ export default function CaseDetailPage({ params }) {
                     <span className="badge" style={{ fontSize: '10px', background: s.aiAssisted ? 'rgba(251,191,36,0.12)' : 'rgba(148,163,184,0.12)', color: s.aiAssisted ? '#fbbf24' : '#94a3b8' }}>
                       {s.aiAssisted ? 'AI-assisted' : 'Deterministic'}
                     </span>
+                    {s.tool && (
+                      <span className="badge" style={{ fontSize: '10px', fontFamily: 'monospace', background: 'rgba(0,173,180,0.12)', color: '#00ADB4' }}>
+                        via {s.tool}()
+                      </span>
+                    )}
                     <span className="font-mono" style={{ fontSize: '10.5px', color: '#5f6d7e' }}>
                       {new Date(s.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>

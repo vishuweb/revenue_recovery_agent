@@ -162,6 +162,28 @@ CREATE TABLE IF NOT EXISTS dataset_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Agent long-term memory. Logically distinct from the business tables above
+-- (it stores derived recovery-strategy signal, never a copy of customer/
+-- payment records) but lives in the same Postgres instance so it persists
+-- reliably in serverless production — see lib/memory/sqliteMemory.js, which
+-- uses this table via getDb() whenever DATABASE_URL is set, and falls back
+-- to a standalone local SQLite file otherwise.
+CREATE TABLE IF NOT EXISTS agent_memory (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL,
+  case_id TEXT,
+  failure_category TEXT NOT NULL DEFAULT 'unknown',
+  action_type TEXT NOT NULL,
+  outcome TEXT NOT NULL DEFAULT 'unknown',
+  discount_percent DOUBLE PRECISION,
+  channel TEXT,
+  detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_customer ON agent_memory(customer_id);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_category ON agent_memory(failure_category);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_action ON agent_memory(action_type, outcome);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);

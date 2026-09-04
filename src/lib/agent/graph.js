@@ -36,7 +36,7 @@ import { evaluateOutcome, routeEvaluateOutcome } from './nodes/evaluateOutcome.j
  */
 let compiledGraph = null;
 
-function buildGraph() {
+async function buildGraph() {
   const graph = new StateGraph(AgentState)
     .addNode('detect_event', detectEvent)
     .addNode('load_customer_context', loadCustomerContext)
@@ -71,10 +71,11 @@ function buildGraph() {
       end: END,
     });
 
-  return graph.compile({ checkpointer: getCheckpointer() });
+  const checkpointer = await getCheckpointer();
+  return graph.compile({ checkpointer });
 }
 
-function getGraph() {
+async function getGraph() {
   if (!compiledGraph) compiledGraph = buildGraph();
   return compiledGraph;
 }
@@ -113,7 +114,7 @@ export async function runRecoveryAgent(paymentId, opts = {}) {
   const threadId = opts.threadId || threadIdForPayment(paymentId);
   const initialState = buildInitialState(event, { ...opts, threadId });
 
-  const graph = getGraph();
+  const graph = await getGraph();
   const finalState = await graph.invoke(initialState, {
     configurable: { thread_id: threadId },
     recursionLimit: 50,
@@ -159,7 +160,7 @@ export async function resumeRecoveryAgent(threadId) {
   if (caseRow && ['recovered', 'stopped'].includes(caseRow.status)) {
     const lastAction = await db.prepare('SELECT * FROM recovery_actions WHERE case_id = ? ORDER BY created_at DESC LIMIT 1').get(caseRow.id);
     if (lastAction) {
-      recordOutcome({
+      await recordOutcome({
         customerId: caseRow.customer_id,
         caseId: caseRow.id,
         failureCategory: caseRow.failure_category,
@@ -181,7 +182,7 @@ export async function resumeRecoveryAgent(threadId) {
     await logDecision(caseRow.id, 'agent_resumed', { alreadyResolved: false }, { actor: 'agent' });
   }
 
-  const graph = getGraph();
+  const graph = await getGraph();
   // NOTE: must be {} here, not null/undefined — LangGraph treats invoke(null)
   // on an existing thread as "nothing to resume" and does no work at all
   // (verified empirically: it just replays the last checkpoint). {} is a

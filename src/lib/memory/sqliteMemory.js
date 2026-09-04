@@ -23,7 +23,11 @@ CREATE INDEX IF NOT EXISTS idx_agent_memory_action ON agent_memory(action_type, 
 `;
 
 /**
- * Low-level SQLite storage adapter for long-term agent memory.
+ * Low-level SQLite storage adapter for long-term agent memory — used for
+ * LOCAL DEVELOPMENT ONLY. In production (DATABASE_URL set), memoryService.js
+ * uses pgMemory.js instead: a standalone SQLite file is not a reliable
+ * production store on serverless platforms (Vercel's filesystem is
+ * read-only outside a per-invocation, non-shared /tmp).
  *
  * Deliberately isolated from both:
  *  - the LangGraph checkpoint DB (lib/agent/checkpointer.js) — that is
@@ -32,9 +36,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_memory_action ON agent_memory(action_type, 
  *    remain the source of truth there; this file only stores derived
  *    recovery-strategy facts.
  *
- * The interface here (insert/query/aggregate) is intentionally storage-
- * agnostic so MemoryService can later be pointed at a Postgres-backed
- * adapter with the same three functions and nothing above it changes.
+ * Exposes the same async interface (insert/query/aggregate) as
+ * pgMemory.js, even though better-sqlite3 itself is synchronous, so
+ * memoryService.js can await either backend identically.
  */
 
 let db = null;
@@ -54,7 +58,7 @@ function getRawDb() {
 }
 
 /** @param {{id:string, customerId:string, caseId?:string, failureCategory:string, actionType:string, outcome:string, discountPercent?:number, channel?:string, detail?:object}} fact */
-export function insert(fact) {
+export async function insert(fact) {
   const raw = getRawDb();
   raw.prepare(`
     INSERT INTO agent_memory (id, customer_id, case_id, failure_category, action_type, outcome, discount_percent, channel, detail, created_at)
@@ -67,7 +71,7 @@ export function insert(fact) {
 }
 
 /** @param {{customerId?:string, failureCategory?:string, actionType?:string, outcome?:string, limit?:number}} filters */
-export function query(filters = {}) {
+export async function query(filters = {}) {
   const raw = getRawDb();
   const clauses = [];
   const params = [];
@@ -85,7 +89,7 @@ export function query(filters = {}) {
 }
 
 /** Aggregate success rate per action_type for a given failure category. */
-export function aggregateStrategyEffectiveness(failureCategory, limit = 5) {
+export async function aggregateStrategyEffectiveness(failureCategory, limit = 5) {
   const raw = getRawDb();
   const rows = raw.prepare(`
     SELECT action_type,

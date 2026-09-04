@@ -124,7 +124,16 @@ export async function recordRecoveryAction(caseId, actionType, details = {}) {
  */
 export async function executeActionTool(actionId) {
   const result = await executeRecoveryAction(actionId);
-  const success = result.status === 'completed';
+
+  // executeRecoveryAction's outer `status: 'completed'` only means "ran
+  // without throwing" — a DECLINED retry (the gateway said no, no
+  // exception) is still wrapped as status:'completed' with the real
+  // outcome nested at result.result.success === false (see
+  // lib/engine/orchestrator.js's 'retry' branch). Every other action type
+  // (payment_link, email, discount, no_action, ...) has no nested
+  // `success` field at all — for those, reaching 'completed' status IS
+  // the real outcome, so its absence must not be treated as failure.
+  const success = result.status === 'completed' && result.result?.success !== false;
 
   return toolResult({
     success,
@@ -132,8 +141,13 @@ export async function executeActionTool(actionId) {
     externalReference: result.result?.providerPaymentId || result.result?.url || null,
     message: result.result?.msg || result.reason || (success ? 'Action completed' : `Action ${result.status}`),
     // `error` doubles as a machine-readable non-success status code
-    // (e.g. 'pending_approval', 'dead_letter', 'skipped') so callers can
-    // branch without re-deriving it from the message string.
-    error: success ? null : (result.status === 'error' ? result.error : result.status),
+    // (e.g. 'pending_approval', 'dead_letter', 'skipped', a retry decline
+    // reason) so callers can branch without re-deriving it from the
+    // message string.
+    error: success ? null : (
+      result.status === 'error' ? result.error
+      : result.status === 'completed' ? (result.result?.failureReason || 'declined')
+      : result.status
+    ),
   });
 }
