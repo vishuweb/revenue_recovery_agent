@@ -61,12 +61,12 @@ export default function DashboardPage() {
 
   const runRevenueRecoveryDemo = async () => {
     setDemoRunning(true);
-    toast.info('Running Revenue Recovery Demo: processing 100 simulated cases through the agent...');
+    toast.info('Running Revenue Recovery Demo: processing 30 simulated cases through the agent...');
     try {
       const res = await fetch('/api/agent/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: 100 }),
+        body: JSON.stringify({ count: 30 }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -360,12 +360,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Autonomous Agent (LangGraph + Ollama) — additive; the hero pipeline and
+      {/* Autonomous Agent (LangGraph + AI) — additive; the hero pipeline and
           demo button are always visible so the agent story is obvious even
           before any case has run. Metrics/strategy tiles appear once data exists. */}
       <div style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + Ollama)</h3>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>Autonomous Agent (LangGraph + AI)</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {agentMetrics?.enabled && <span className="badge primary">{agentMetrics.casesProcessed} case(s) processed</span>}
             <button className="btn btn-primary btn-sm" onClick={runRevenueRecoveryDemo} disabled={demoRunning}>

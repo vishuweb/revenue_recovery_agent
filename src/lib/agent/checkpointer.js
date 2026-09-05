@@ -37,7 +37,13 @@ export async function getCheckpointer() {
       const pool = new pg.Pool({
         connectionString: process.env.DATABASE_URL,
         ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-        max: 5,
+        // Matches the business pool's max (lib/db/pg-adapter.js) — the
+        // batch endpoint now runs up to 8 cases concurrently
+        // (mapWithConcurrency in api/agent/batch/route.js), each briefly
+        // holding a checkpoint connection at multiple points in its graph
+        // run; a smaller pool here would just queue those checkpoint
+        // writes and cancel out the concurrency gain.
+        max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000,
       });

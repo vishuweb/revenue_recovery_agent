@@ -13,6 +13,36 @@ const HARD_REASONS = ['card_expired', 'authentication_failed', 'payment_cancelle
 const ALL_REASONS = [...TRANSIENT_REASONS, ...HARD_REASONS, 'card_declined'];
 
 /**
+ * Runs `worker` over `items` with at most `limit` in flight at once.
+ *
+ * Each case in a batch is fully independent (different customer_id,
+ * payment_id) — nothing about the decision, policy, or NEV math changes
+ * by running several concurrently instead of strictly one-at-a-time. This
+ * exists because running 100 sequential cases against a REMOTE Postgres
+ * (each case makes ~15-20 round trips across the graph's nodes plus a
+ * checkpoint write per step) took over 90 seconds in production and never
+ * completed within Vercel's function timeout — against local SQLite this
+ * was never visible, since per-query latency there is ~1000x lower.
+ * Concurrency stays bounded (default 8) to stay comfortably under the
+ * business-DB pool's max(10) connections (see lib/db/pg-adapter.js) with
+ * headroom for other concurrent requests (e.g. a dashboard poll).
+ */
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runNext() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  return results;
+}
+
+/**
  * Realistic failed-payment amounts, in paise, tied to customer plan tier —
  * NOT the seeded customer.mrr (₹50–₹2,000, too small for any fixed-cost
  * action like payment_link/email/escalate to make economic sense against).
@@ -59,9 +89,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No customers available — seed the database first' }, { status: 400 });
     }
 
+    // Row metadata is decided sequentially (the "reuse a customer already
+    // seen this run" logic reads/grows usedThisRun as it goes) — this part
+    // is pure in-memory bookkeeping, not I/O, so it's cheap regardless.
+    // Only the actual database writes below are parallelized.
     const usedThisRun = [];
-    const paymentIds = [];
-
+    const rows = [];
     for (let i = 0; i < n; i++) {
       // ~25% of cases (after the first few) deliberately reuse a customer
       // already seen earlier in this run, so repeat-failure and
@@ -81,31 +114,48 @@ export async function POST(request) {
         ? 5200000 + Math.floor(Math.random() * 1800000)
         : sampleAmountForPlan(customer.plan);
 
-      const reason = ALL_REASONS[Math.floor(Math.random() * ALL_REASONS.length)];
-      const paymentId = uuidv4();
+      rows.push({
+        paymentId: uuidv4(), customer,
+        amount, reason: ALL_REASONS[Math.floor(Math.random() * ALL_REASONS.length)],
+      });
+    }
 
+    // Independent inserts — different payment ids, no ordering dependency
+    // between rows — so these run with bounded concurrency rather than
+    // one round trip at a time against a remote Postgres.
+    await mapWithConcurrency(rows, 8, async (row) => {
       await db.prepare(`
         INSERT INTO payments (id, customer_id, amount, currency, status, method, failure_reason, failure_source, attempted_at, created_at)
         VALUES (?, ?, ?, 'INR', 'failed', ?, ?, 'simulated_batch', datetime('now'), datetime('now'))
-      `).run(paymentId, customer.id, amount, customer.payment_method || 'card', reason);
-      paymentIds.push(paymentId);
-    }
+      `).run(row.paymentId, row.customer.id, row.amount, row.customer.payment_method || 'card', row.reason);
+    });
+    const paymentIds = rows.map((r) => r.paymentId);
 
     // Batch runs skip the LLM entirely (llmEnabled: false) — 100+ live
-    // Ollama calls would make this slow and dependent on a model being up,
-    // and would not materially change candidates that are already
-    // deterministically NEV-ranked and memory-adjusted. Individual runs
-    // (/api/agent/run, the simulator's "Run via Agent") leave it enabled,
-    // which is where live AI reasoning should actually be demonstrated.
-    const results = [];
-    for (const paymentId of paymentIds) {
+    // Gemini/Ollama calls would make this slow and dependent on a model
+    // being up, and would not materially change candidates that are
+    // already deterministically NEV-ranked and memory-adjusted.
+    // Individual runs (/api/agent/run, the simulator's "Run via Agent")
+    // leave it enabled, which is where live AI reasoning should actually
+    // be demonstrated.
+    //
+    // Each case is independent (own customer_id/payment_id), so this runs
+    // with bounded concurrency (8 in flight) rather than one at a time —
+    // see mapWithConcurrency's own comment for why this matters against a
+    // remote Postgres. Memory-influenced repeat-customer scenarios still
+    // work correctly under concurrency because the *deliberate* pairs
+    // (see decideRecoveryAction.js's applyMemoryAdjustment) are a small
+    // fraction of any run and the ones that do land in the same concurrent
+    // batch simply read whatever memory existed at the moment they ran —
+    // still real, still never fabricated, just not guaranteed ordering.
+    const results = await mapWithConcurrency(paymentIds, 8, async (paymentId) => {
       try {
         const result = await runRecoveryAgent(paymentId, { llmEnabled: false });
-        results.push({ paymentId, ...result });
+        return { paymentId, ...result };
       } catch (err) {
-        results.push({ paymentId, error: err.message });
+        return { paymentId, error: err.message };
       }
-    }
+    });
 
     const caseIds = results.map((r) => r.caseId).filter(Boolean);
     let summary = null;
@@ -136,7 +186,7 @@ export async function POST(request) {
         ? (await db.prepare(`SELECT * FROM recovery_cases WHERE id IN (${placeholders}) AND status IN ('open', 'in_progress')`).all(...caseIds))
             .filter((c) => pausedCaseIds.has(c.id))
         : [];
-      for (const c of pausedCases) {
+      await mapWithConcurrency(pausedCases, 8, async (c) => {
         let actionProbability = c.recovery_probability || 0;
         try {
           const candidates = JSON.parse(c.candidate_actions || '[]');
@@ -148,7 +198,7 @@ export async function POST(request) {
           await processRecoveryOutcome(c.id, { success: true });
           await resumeRecoveryAgent(`case_${c.payment_id}`);
         }
-      }
+      });
 
       const rows = await db.prepare(`SELECT * FROM recovery_cases WHERE id IN (${placeholders})`).all(...caseIds);
 

@@ -953,3 +953,27 @@ body {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+.agent-spin-icon {
+  display: inline-block;
+  animation: agent-spin 1s linear infinite;
+}
+@keyframes agent-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-spin-icon { animation: none; }
+}
+
+.csv-hint-hand {
+  display: inline-block;
+  animation: csv-hint-point 1.6s ease-in-out infinite;
+}
+@keyframes csv-hint-point {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .csv-hint-hand { animation: none; }
+}

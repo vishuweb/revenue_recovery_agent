@@ -115,5 +115,92 @@ txn_gw_909,usr_gw_09,Kay Kay Menon,kaykay@ahmedabadtech.io,enterprise,185000,car
 txn_gw_910,usr_gw_10,Pankaj Tripathi,pankaj@patnasolutions.in,growth,28000,card,insufficient_funds,1,9,1,0.40
 txn_gw_911,usr_gw_11,Jaideep Ahlawat,jaideep@gurgaonops.co,enterprise,115000,card,gateway_error,0,22,0,0.18
 txn_gw_912,usr_gw_12,Shefali Shah,shefali@noidacare.org,starter,9200,upi,payment_cancelled,1,6,2,0.65`
+  },
+  {
+    id: 'revenue_recovery_sample',
+    name: 'Revenue Recovery Sample Dataset',
+    badge: 'Recommended',
+    description: '77 revenue-risk events built to exercise every agent path: recoverable transient failures, network/gateway errors, hard declines, checkout/invoice/subscription/mandate variety, high-value and escalation-threshold accounts, and repeat customers for the memory demo.',
+    recordsCount: 77,
+    estimatedRisk: '₹5.2L',
+    csv: `transaction_id,customer_id,customer_name,email,company,customer_segment,amount,mrr,lifetime_value,payment_method,failure_reason,retry_count,previous_successful_payments,previous_failed_payments,discount_affinity,opted_out
+TXN5000,CUST_RCV_SISI0,Siddharth Singhal,siddharth.singhal@growthpulse.com,Nexa Solutions,growth,11154,10107,55416,card,gateway_error,0,19,1,0.20,0
+TXN5001,CUST_RCV_PRSA1,Priya Saxena,priya.saxena@beacon.com,WebWorks Studio,growth,16780,8830,80728,upi,insufficient_funds,0,16,1,0.60,0
+TXN5002,CUST_RCV_GAVE2,Gaurav Verma,gaurav.verma@finnovate.com,Zenith HR Systems,starter,1843,3972,3992,card,insufficient_funds,0,19,0,0.56,0
+TXN5003,CUST_RCV_MEPA3,Meera Patnaik,meera.patnaik@webworks.com,Nexa Solutions,starter,369,4118,3704,card,insufficient_funds,0,18,1,0.16,0
+TXN5004,CUST_RCV_NASH4,Naveen Shah,naveen.shah@growthpulse.com,GrowthPulse Media,starter,580,2124,2984,upi,insufficient_funds,0,19,1,0.78,0
+TXN5005,CUST_RCV_MEHE5,Meera Hegde,meera.hegde@dataminds.com,DataMinds Analytics,starter,1762,2721,34728,card,insufficient_funds,0,15,0,0.34,0
+TXN5006,CUST_RCV_RODE6,Rohan Deshmukh,rohan.deshmukh@beacon.com,Finnovate Capital,starter,2580,2553,29736,upi,insufficient_funds,0,24,1,0.14,0
+TXN5007,CUST_RCV_MEPI7,Meera Pillai,meera.pillai@finnovate.com,GrowthPulse Media,growth,4106,5161,107856,upi,insufficient_funds,0,16,1,0.46,0
+TXN5008,CUST_NET_SNKU8,Sneha Kulkarni,sneha.kulkarni@webworks.com,DataMinds Analytics,starter,3072,643,22428,card,network_error,1,6,0,0.76,0
+TXN5009,CUST_NET_NADE9,Naveen Deshmukh,naveen.deshmukh@zenith.com,CloudScale Technologies,growth,11086,14587,18228,card,network_error,0,14,2,0.57,0
+TXN5010,CUST_NET_PRHE10,Preeti Hegde,preeti.hegde@beacon.com,Zenith HR Systems,starter,1796,4228,25326,card,payment_timed_out,1,14,1,0.05,0
+TXN5011,CUST_NET_ROPI11,Rohan Pillai,rohan.pillai@webworks.com,DataMinds Analytics,growth,13790,15108,21030,card,bank_server_down,1,15,0,0.23,0
+TXN5012,CUST_NET_RAME12,Rahul Mehta,rahul.mehta@cloudscale.com,CloudScale Technologies,growth,9326,3510,20034,card,bank_server_down,1,8,2,0.85,0
+TXN5013,CUST_HARD_ANDE13,Ananya Deshmukh,ananya.deshmukh@growthpulse.com,Finnovate Capital,growth,7961,6354,35476,card,invalid_card,2,18,2,0.98,0
+TXN5014,CUST_HARD_MESA14,Meera Saxena,meera.saxena@growthpulse.com,GrowthPulse Media,starter,4262,1010,2814,card,account_closed,1,3,1,0.17,0
+TXN5015,CUST_HARD_TAIY15,Tanvi Iyer,tanvi.iyer@finnovate.com,Nexa Solutions,starter,2853,3399,10633,card,card_expired,0,10,2,0.41,0
+TXN5016,CUST_HARD_DESH16,Deepika Shah,deepika.shah@growthpulse.com,CloudScale Technologies,enterprise,17937,18238,178465,card,card_expired,1,16,0,0.65,0
+TXN5017,CUST_HARD_PRKU17,Preeti Kulkarni,preeti.kulkarni@webworks.com,Zenith HR Systems,enterprise,25950,22022,90832,card,account_closed,2,14,0,1.00,0
+TXN5018,CUST_HARD_MEME18,Meera Mehta,meera.mehta@webworks.com,Beacon CRM,growth,10704,7504,44359,card,account_closed,2,13,1,0.67,0
+TXN5019,CUST_VAR_GAKU19,Gaurav Kulkarni,gaurav.kulkarni@growthpulse.com,DataMinds Analytics,growth,3343,17408,29088,netbanking,checkout_abandoned,0,5,0,0.70,0
+TXN5020,CUST_VAR_SUHE20,Sunita Hegde,sunita.hegde@finnovate.com,WebWorks Studio,starter,475,2612,13626,card,invoice_overdue,0,5,0,0.37,0
+TXN5021,CUST_VAR_ROPA21,Rohan Patnaik,rohan.patnaik@dataminds.com,Finnovate Capital,starter,399,3067,15816,upi,subscription_failed,0,8,2,0.33,0
+TXN5022,CUST_VAR_PRME22,Priya Mehta,priya.mehta@finnovate.com,WebWorks Studio,starter,2967,4300,3066,netbanking,mandate_failure,0,8,2,0.26,0
+TXN5023,CUST_VAR_GAHE23,Gaurav Hegde,gaurav.hegde@beacon.com,GrowthPulse Media,growth,11143,4466,73668,card,checkout_abandoned,0,17,0,0.82,0
+TXN5024,CUST_VAR_RAMA24,Rahul Malhotra,rahul.malhotra@dataminds.com,Beacon CRM,starter,2037,3499,25176,upi,invoice_overdue,0,12,0,0.67,0
+TXN5025,CUST_HVC_TAME25,Tanvi Mehta,tanvi.mehta@nexa.com,Beacon CRM,enterprise,17332,37848,302710,card,card_declined,0,20,0,0.03,0
+TXN5026,CUST_HVC_ANSH26,Ananya Shah,ananya.shah@beacon.com,Nexa Solutions,enterprise,39335,30382,327645,card,insufficient_funds,0,21,1,0.02,0
+TXN5027,CUST_HVC_PRKU27,Preeti Kulkarni,preeti.kulkarni@nexa.com,WebWorks Studio,enterprise,16885,35331,202824,card,insufficient_funds,0,23,1,0.11,0
+TXN5028,CUST_HVC_VIPI28,Vikram Pillai,vikram.pillai@zenith.com,Nexa Solutions,enterprise,32934,22682,192907,card,card_declined,0,28,1,0.18,0
+TXN5029,CUST_ESC_TADE29,Tanvi Deshmukh,tanvi.deshmukh@dataminds.com,WebWorks Studio,enterprise,66644,66644,799728,card,insufficient_funds,0,20,1,0.04,0
+TXN5030,CUST_ESC_NAVE30,Naveen Verma,naveen.verma@beacon.com,Beacon CRM,enterprise,60590,60590,727080,card,gateway_error,0,27,1,0.06,0
+TXN5031,CUST_ESC_MEHE31,Meera Hegde,meera.hegde@cloudscale.com,DataMinds Analytics,enterprise,93704,93704,1124448,card,insufficient_funds,0,27,1,0.08,0
+TXN5032,CUST_MEM_MEDE32,Meera Deshmukh,meera.deshmukh@cloudscale.com,Finnovate Capital,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5033,CUST_MEM_AASH33,Aarav Shah,aarav.shah@finnovate.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5034,CUST_MEM_PRSA34,Preeti Saxena,preeti.saxena@zenith.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5035,CUST_MEM_RADE35,Rahul Deshmukh,rahul.deshmukh@finnovate.com,DataMinds Analytics,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5036,CUST_MEM_PRPA36,Priya Patnaik,priya.patnaik@cloudscale.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5037,CUST_MEM_PRKU37,Priya Kulkarni,priya.kulkarni@nexa.com,CloudScale Technologies,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5038,CUST_MEM_ROSA38,Rohan Saxena,rohan.saxena@dataminds.com,DataMinds Analytics,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5039,CUST_MEM_PRSH39,Priya Shah,priya.shah@growthpulse.com,CloudScale Technologies,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5040,CUST_MEM_AAPA40,Aarav Patnaik,aarav.patnaik@dataminds.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5041,CUST_MEM_SIKU41,Siddharth Kulkarni,siddharth.kulkarni@cloudscale.com,WebWorks Studio,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5042,CUST_MEM_NAMA42,Naveen Malhotra,naveen.malhotra@nexa.com,GrowthPulse Media,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5043,CUST_MEM_VIPA43,Vikram Patnaik,vikram.patnaik@finnovate.com,WebWorks Studio,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5044,CUST_MEM_ROMA44,Rohan Malhotra,rohan.malhotra@growthpulse.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5045,CUST_MEM_SUSH45,Sunita Shah,sunita.shah@dataminds.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5046,CUST_MEM_RADE46,Rahul Deshmukh,rahul.deshmukh@dataminds.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5047,CUST_MEM_KASI47,Karan Singhal,karan.singhal@growthpulse.com,Nexa Solutions,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5048,CUST_MEM_TAKU48,Tanvi Kulkarni,tanvi.kulkarni@zenith.com,Nexa Solutions,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5049,CUST_MEM_PRHE49,Priya Hegde,priya.hegde@cloudscale.com,GrowthPulse Media,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5050,CUST_MEM_SIPI50,Siddharth Pillai,siddharth.pillai@zenith.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5051,CUST_MEM_TAKU51,Tanvi Kulkarni,tanvi.kulkarni@zenith.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5052,CUST_REP_SNKU52,Sneha Kulkarni,sneha.kulkarni@finnovate.com,CloudScale Technologies,growth,4498,10111,40980,card,payment_cancelled,0,5,2,0.55,0
+TXN5053,CUST_REP_SNKU52,Sneha Kulkarni,sneha.kulkarni@finnovate.com,CloudScale Technologies,growth,8470,15583,35868,card,authentication_failed,1,4,3,0.51,0
+TXN5054,CUST_REP_SNKU52,Sneha Kulkarni,sneha.kulkarni@finnovate.com,CloudScale Technologies,growth,4196,3041,90738,card,authentication_failed,2,5,5,0.39,0
+TXN5055,CUST_REP_AASI55,Aarav Singhal,aarav.singhal@zenith.com,Beacon CRM,growth,16008,11750,21048,card,authentication_failed,0,9,4,0.32,0
+TXN5056,CUST_REP_AASI55,Aarav Singhal,aarav.singhal@zenith.com,Beacon CRM,growth,3396,4992,72006,card,authentication_failed,1,4,3,0.40,0
+TXN5057,CUST_REP_AASI55,Aarav Singhal,aarav.singhal@zenith.com,Beacon CRM,growth,13004,11240,52380,card,payment_cancelled,2,8,5,0.59,0
+TXN5058,CUST_MEM_MEDE32,Meera Deshmukh,meera.deshmukh@cloudscale.com,Finnovate Capital,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5059,CUST_MEM_AASH33,Aarav Shah,aarav.shah@finnovate.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5060,CUST_MEM_PRSA34,Preeti Saxena,preeti.saxena@zenith.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5061,CUST_MEM_RADE35,Rahul Deshmukh,rahul.deshmukh@finnovate.com,DataMinds Analytics,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5062,CUST_MEM_PRPA36,Priya Patnaik,priya.patnaik@cloudscale.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5063,CUST_MEM_PRKU37,Priya Kulkarni,priya.kulkarni@nexa.com,CloudScale Technologies,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5064,CUST_MEM_ROSA38,Rohan Saxena,rohan.saxena@dataminds.com,DataMinds Analytics,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5065,CUST_MEM_PRSH39,Priya Shah,priya.shah@growthpulse.com,CloudScale Technologies,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5066,CUST_MEM_AAPA40,Aarav Patnaik,aarav.patnaik@dataminds.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5067,CUST_MEM_SIKU41,Siddharth Kulkarni,siddharth.kulkarni@cloudscale.com,WebWorks Studio,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5068,CUST_MEM_NAMA42,Naveen Malhotra,naveen.malhotra@nexa.com,GrowthPulse Media,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5069,CUST_MEM_VIPA43,Vikram Patnaik,vikram.patnaik@finnovate.com,WebWorks Studio,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5070,CUST_MEM_ROMA44,Rohan Malhotra,rohan.malhotra@growthpulse.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5071,CUST_MEM_SUSH45,Sunita Shah,sunita.shah@dataminds.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5072,CUST_MEM_RADE46,Rahul Deshmukh,rahul.deshmukh@dataminds.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5073,CUST_MEM_KASI47,Karan Singhal,karan.singhal@growthpulse.com,Nexa Solutions,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5074,CUST_MEM_TAKU48,Tanvi Kulkarni,tanvi.kulkarni@zenith.com,Nexa Solutions,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5075,CUST_MEM_PRHE49,Priya Hegde,priya.hegde@cloudscale.com,GrowthPulse Media,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5076,CUST_MEM_SIPI50,Siddharth Pillai,siddharth.pillai@zenith.com,Zenith HR Systems,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0
+TXN5077,CUST_MEM_TAKU51,Tanvi Kulkarni,tanvi.kulkarni@zenith.com,Beacon CRM,growth,400,200,3000,card,authentication_failed,0,10,1,0.50,0`
   }
 ];

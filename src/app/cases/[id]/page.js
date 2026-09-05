@@ -553,7 +553,7 @@ export default function CaseDetailPage({ params }) {
               <IconZap size={16} color="#00FFF5" />
               <span>Autonomous Agent Decision Timeline</span>
             </h3>
-            <span className="badge primary">LangGraph + Ollama</span>
+            <span className="badge primary">LangGraph + AI</span>
           </div>
 
           <p style={{ fontSize: '12px', color: '#8e9ba9', marginTop: '-8px', marginBottom: '16px', lineHeight: 1.5 }}>

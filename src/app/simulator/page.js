@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
 import { formatCurrency } from '../page';
 import { useToast } from '../components/ToastContext';
+import { AgentActivityPanel } from '../components/AgentActivityPanel';
+import { CsvQuickImportCard } from '../components/CsvQuickImportCard';
 import {
   IconSimulator,
   IconZap,
@@ -11,19 +12,61 @@ import {
   IconWarning,
   IconCoins,
   IconSuccess,
-  IconShield,
-  IconChevronRight,
   IconCard
 } from '../components/Icons';
 
+// A case id can surface in several shapes depending on which API path
+// produced it (webhook route returns it top-level; trigger_scenario wraps
+// it inside case.cases[0]; trigger_agent_case spreads the agent result).
+// Never invents one — returns null when the response genuinely has none
+// (e.g. bulk/cron/seed actions that don't create a single case).
+function extractCaseId(data) {
+  if (!data) return null;
+  return (
+    data.caseId ||
+    data.case?.id ||
+    data.case?.cases?.[0]?.caseId ||
+    data.case?.cases?.[0]?.id ||
+    data.cases?.[0]?.caseId ||
+    null
+  );
+}
+
 export default function SimulatorPage() {
-  const router = useRouter();
   const toast = useToast();
   const [loading, setLoading] = useState(false);
+  const [activeAction, setActiveAction] = useState(null);
   const [lastResult, setLastResult] = useState(null);
+  const [lastCaseId, setLastCaseId] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+
+  const refreshMetrics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent/metrics');
+      if (!res.ok) return;
+      const data = await res.json();
+      setMetrics(data);
+    } catch {
+      // Metrics strip is a convenience overlay — silently skip on failure,
+      // never block or error out the simulator itself over it.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMetrics();
+    const interval = setInterval(refreshMetrics, 8000);
+    return () => clearInterval(interval);
+  }, [refreshMetrics]);
+
+  const finishAction = (data) => {
+    setLastResult(data);
+    setLastCaseId(extractCaseId(data));
+    refreshMetrics();
+  };
 
   const handleCommand = async (command, params = {}) => {
     setLoading(true);
+    setActiveAction(params.scenario || command);
     toast.info(`Simulating ${params.scenario || command}...`);
     try {
       const res = await fetch('/api/simulator', {
@@ -33,7 +76,7 @@ export default function SimulatorPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setLastResult(data);
+        finishAction(data);
         toast.success(`Simulation completed! ${data.message || ''}`);
       } else {
         toast.error(data.error || 'Simulation failed');
@@ -42,6 +85,7 @@ export default function SimulatorPage() {
       toast.error('Network failure connecting to simulation engine');
     } finally {
       setLoading(false);
+      setActiveAction(null);
     }
   };
 
@@ -197,6 +241,7 @@ export default function SimulatorPage() {
 
   const handleSimulateWebhook = async (eventType) => {
     setLoading(true);
+    setActiveAction(eventType);
     toast.info(`Sending ${eventType} webhook...`);
     try {
       const paymentId = `pay_rzp_${Date.now()}`;
@@ -227,7 +272,7 @@ export default function SimulatorPage() {
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      setLastResult(data);
+      finishAction(data);
       if (res.ok) {
         toast.success(`Webhook '${eventType}' processed by Recovery Agent!`);
       } else {
@@ -237,6 +282,7 @@ export default function SimulatorPage() {
       toast.error('Failed to dispatch webhook');
     } finally {
       setLoading(false);
+      setActiveAction(null);
     }
   };
 
@@ -282,7 +328,7 @@ export default function SimulatorPage() {
             Inject synthetic payment failures, trigger live Razorpay Standard Web Checkout, and observe real-time autonomous recovery decisions.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => handleCommand('seed')}
@@ -291,8 +337,35 @@ export default function SimulatorPage() {
             <IconCoins size={14} />
             <span>Re-seed Dataset</span>
           </button>
+          <div style={{ width: '320px', maxWidth: '100%' }}>
+            <CsvQuickImportCard />
+          </div>
         </div>
       </div>
+
+      {/* Live metrics strip — reflects the same backend metrics endpoint the
+          dashboard uses, polled so results from simulator/CSV actions show
+          up here without a manual refresh. */}
+      {metrics && metrics.enabled !== false && (
+        <div className="grid-cols-4" style={{ marginBottom: '24px', gap: '12px' }}>
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8e9ba9', marginBottom: '4px' }}>Cases</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{metrics.casesProcessed ?? '—'}</div>
+          </div>
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8e9ba9', marginBottom: '4px' }}>Amount at Risk</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#fb7185' }}>{formatCurrency(metrics.totalRevenueAtRisk || 0)}</div>
+          </div>
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8e9ba9', marginBottom: '4px' }}>Revenue Recovered</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#00FFF5' }}>{formatCurrency(metrics.totalRecovered || 0)}</div>
+          </div>
+          <div className="card" style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: '10.5px', color: '#8e9ba9', marginBottom: '4px' }}>Recovery Rate</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{(metrics.recoveryRate || 0).toFixed(1)}%</div>
+          </div>
+        </div>
+      )}
 
       {/* Razorpay Standard Web Checkout Sandbox Section */}
       <div style={{ marginBottom: '24px' }}>
@@ -344,7 +417,7 @@ export default function SimulatorPage() {
               style={{ border: '1px solid rgba(244, 63, 94, 0.4)', color: '#fb7185' }}
             >
               <IconWarning size={14} />
-              <span>Fire payment.failed Webhook</span>
+              <span>{activeAction === 'payment.failed' ? 'Running Agent...' : 'Fire payment.failed Webhook'}</span>
             </button>
           </div>
 
@@ -368,7 +441,7 @@ export default function SimulatorPage() {
               style={{ border: '1px solid #00ADB4', color: '#00FFF5' }}
             >
               <IconSuccess size={14} />
-              <span>Fire payment.captured Webhook</span>
+              <span>{activeAction === 'payment.captured' ? 'Running Agent...' : 'Fire payment.captured Webhook'}</span>
             </button>
           </div>
         </div>
@@ -408,7 +481,7 @@ export default function SimulatorPage() {
                   disabled={loading}
                 >
                   <IconZap size={14} />
-                  <span>Trigger Scenario</span>
+                  <span>{activeAction === sc.id ? 'Running Agent...' : 'Trigger Scenario'}</span>
                 </button>
               </div>
             </div>
@@ -468,7 +541,7 @@ export default function SimulatorPage() {
       {/* Autonomous LangGraph Agent */}
       <div style={{ marginBottom: '24px' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff', marginBottom: '4px' }}>
-          Autonomous Agent (LangGraph + Ollama)
+          Autonomous Agent (LangGraph + AI)
         </h3>
         <p style={{ fontSize: '12.5px', color: '#8e9ba9', marginBottom: '14px' }}>
           Runs the bounded agent loop — detect → analyze → score → decide → policy gate → execute → observe → learn — with its own audit trail and long-term memory, instead of the deterministic pipeline above.
@@ -508,6 +581,7 @@ export default function SimulatorPage() {
               className="btn btn-secondary btn-sm"
               onClick={async () => {
                 setLoading(true);
+                setActiveAction('batch');
                 toast.info('Running 20 cases through the autonomous agent...');
                 try {
                   const res = await fetch('/api/agent/batch', {
@@ -517,7 +591,7 @@ export default function SimulatorPage() {
                   });
                   const data = await res.json();
                   if (res.ok) {
-                    setLastResult(data);
+                    finishAction(data);
                     toast.success(`Batch complete: ${data.summary?.recoveredCount || 0} recovered, ${data.summary?.escalatedCount || 0} escalated, ${data.summary?.stoppedCount || 0} stopped`);
                   } else {
                     toast.error(data.error || 'Batch simulation failed');
@@ -526,34 +600,45 @@ export default function SimulatorPage() {
                   toast.error('Network failure connecting to agent batch endpoint');
                 } finally {
                   setLoading(false);
+                  setActiveAction(null);
                 }
               }}
               disabled={loading}
             >
               <IconRefresh size={14} />
-              <span>Run 20-Case Batch</span>
+              <span>{activeAction === 'batch' ? 'Running Agent...' : 'Run 20-Case Batch'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Simulation Result Output */}
-      {lastResult && (
+      {/* Agent Activity — the real, backend-produced decision trail for the
+          most recently created case. Never an independent animation: this
+          component fetches and reveals actual persisted state. */}
+      {lastResult && lastCaseId && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff', marginBottom: '14px' }}>
+            Agent Activity
+          </h3>
+          <AgentActivityPanel
+            key={lastCaseId}
+            caseId={lastCaseId}
+            amountAtRisk={lastResult.case?.cases?.[0]?.amount || lastResult.amount}
+            failureReason={lastResult.case?.cases?.[0]?.failure_reason || lastResult.failureReason}
+          />
+        </div>
+      )}
+
+      {/* Fallback telemetry for actions that don't create a single case
+          (seed, bulk scenarios, pipeline sweep, batch run) — still real
+          backend output, just not shaped for the per-case activity panel. */}
+      {lastResult && !lastCaseId && (
         <div className="card card-elevated">
           <div className="card-header">
             <h3 className="card-title">
               <IconSuccess size={16} color="#00FFF5" />
               <span>Simulation Execution Telemetry</span>
             </h3>
-            {(lastResult.case?.id || lastResult.caseId) && (
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => router.push(`/cases/${lastResult.case?.id || lastResult.caseId}`)}
-              >
-                <span>View Generated Case</span>
-                <IconChevronRight size={13} />
-              </button>
-            )}
           </div>
 
           <div style={{ background: '#12151d', border: '1px solid #3B3E47', borderRadius: '8px', padding: '14px', overflowX: 'auto' }}>
