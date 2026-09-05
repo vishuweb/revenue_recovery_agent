@@ -17,13 +17,13 @@
  * @property {string} currency
  * @property {string|null} failureReason
  * @property {string} timestamp - ISO 8601
- * @property {'razorpay_webhook'|'simulator'|'system'} source
+ * @property {'razorpay_webhook'|'simulator'|'csv'|'system'} source
  */
 
 /**
  * Normalize a `payments` row (a failed/pending payment) into a NormalizedEvent.
  * @param {Object} payment - row from the `payments` table
- * @param {'razorpay_webhook'|'simulator'|'system'} [source='system']
+ * @param {'razorpay_webhook'|'simulator'|'csv'|'system'} [source='system']
  * @returns {NormalizedEvent}
  */
 export function normalizePaymentEvent(payment, source = 'system') {

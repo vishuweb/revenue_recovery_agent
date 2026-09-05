@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { parseCSV, autoMapColumns, normalizeRow, analyzeDatasetSummary, detectDatasetArchetype, CANONICAL_FIELDS } from '@/lib/dataset/parser';
+import { validateDataset } from '@/lib/dataset/validator';
 import { DEMO_DATASETS } from '@/lib/dataset/demo-datasets';
 
 export async function POST(request) {
@@ -35,6 +36,7 @@ export async function POST(request) {
     const normalizedPreview = rows.map((row, idx) => normalizeRow(row, suggestedMapping, idx));
     const summary = analyzeDatasetSummary(normalizedPreview);
     const archetype = detectDatasetArchetype(normalizedPreview);
+    const validation = validateDataset(rows, normalizedPreview);
 
     const columnAnalysis = headers.map(header => {
       const mappedTo = suggestedMapping[header];
@@ -63,6 +65,14 @@ export async function POST(request) {
       canonicalFieldDefs: CANONICAL_FIELDS,
       archetype,
       summary,
+      validation: {
+        valid: validation.valid,
+        summary: validation.summary,
+        errors: validation.errors.slice(0, 100), // capped — see errorReportCsv below for the full list
+      },
+      errorReportCsv: validation.errors.length > 0
+        ? ['row,field,message', ...validation.errors.map((e) => `${e.row ?? ''},"${e.field}","${e.message.replace(/"/g, '""')}"`)].join('\n')
+        : null,
       previewRows: normalizedPreview.slice(0, 8),
       rawSampleRows: rows.slice(0, 8)
     });

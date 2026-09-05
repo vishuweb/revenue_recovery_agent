@@ -18,6 +18,12 @@
 //      the Razorpay test API — which has its own rate limits — causing
 //      intermittent, hard-to-diagnose test failures unrelated to any bug
 //      in the code under test (see tests/agent.test.mjs test 26's history).
+//   4. GEMINI_API_KEY/LLM_PROVIDER are neutralized, so
+//      lib/agent/llm/provider.js always starts tests on the Ollama branch
+//      (itself made unreachable by agent.test.mjs) rather than depending
+//      on whatever a developer's real .env.local happens to contain.
+//      Individual tests set these explicitly (and restore them) to
+//      exercise the Gemini branch on purpose.
 //
 // This runs as its own preload step, so by the time any test file's own
 // `import '../src/lib/db/database.js'` executes, database.js (and, on
@@ -34,6 +40,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.DATABASE_URL = process.env.DATABASE_URL || '__test_guard_blocked__';
 process.env.RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '__test_guard_blocked__';
 process.env.RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '__test_guard_blocked__';
+process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || '__test_guard_blocked__';
+process.env.LLM_PROVIDER = process.env.LLM_PROVIDER || '__test_guard_blocked__';
 process.env.SQLITE_DB_PATH = path.join(__dirname, '..', 'data', 'test_revenue_recovery.db');
 // Same reasoning for the agent's own stores — test runs must never mix
 // ephemeral test customers/threads into the real long-term memory or
@@ -45,5 +53,7 @@ await import('../src/lib/db/database.js');
 process.env.DATABASE_URL = '';
 process.env.RAZORPAY_KEY_ID = '';
 process.env.RAZORPAY_KEY_SECRET = '';
+process.env.GEMINI_API_KEY = '';
+process.env.LLM_PROVIDER = '';
 
 console.log(`[test-guard] DATABASE_URL and Razorpay keys neutralized; using disposable SQLite at ${process.env.SQLITE_DB_PATH} and SimulationProvider only.`);

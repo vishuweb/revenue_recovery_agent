@@ -122,9 +122,20 @@ export async function POST(request) {
       // (from candidate_actions, already memory/LLM-adjusted) — a fair
       // dice roll, not a hardcoded number. A miss is left paused, exactly
       // as it would be in production awaiting the cron sweep.
-      const pausedCases = await db.prepare(`
-        SELECT * FROM recovery_cases WHERE id IN (${placeholders}) AND status IN ('open', 'in_progress')
-      `).all(...caseIds);
+      //
+      // Scoped strictly to cases runRecoveryAgent itself reported as
+      // genuinely PAUSED (outcome RETRYABLE + stopReason
+      // 'awaiting_customer_response') — status alone ('open'/'in_progress')
+      // is not enough: an ESCALATED case sits in that same status while it
+      // genuinely awaits human approval, and must never be auto-resolved
+      // by this simulation.
+      const pausedCaseIds = new Set(
+        results.filter((r) => r.decision?.outcome === 'RETRYABLE' && r.decision?.stopReason === 'awaiting_customer_response').map((r) => r.caseId)
+      );
+      const pausedCases = pausedCaseIds.size > 0
+        ? (await db.prepare(`SELECT * FROM recovery_cases WHERE id IN (${placeholders}) AND status IN ('open', 'in_progress')`).all(...caseIds))
+            .filter((c) => pausedCaseIds.has(c.id))
+        : [];
       for (const c of pausedCases) {
         let actionProbability = c.recovery_probability || 0;
         try {

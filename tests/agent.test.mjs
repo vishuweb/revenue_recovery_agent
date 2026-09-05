@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { resetDatabase, getDb } from '../src/lib/db/database.js';
 import { generateSimulationData } from '../src/lib/simulation/generator.js';
 
-import { getStructuredCompletion } from '../src/lib/agent/llm/provider.js';
+import { getStructuredCompletion, __resetCachedModel, __getProviderNameForTests } from '../src/lib/agent/llm/provider.js';
 import { ActionRecommendationSchema, FailureAnalysisSchema, safeParseStructured } from '../src/lib/agent/schemas.js';
 import { normalizePaymentEvent } from '../src/lib/agent/eventNormalizer.js';
 import { buildInitialState } from '../src/lib/agent/state.js';
@@ -107,6 +107,67 @@ describe('LangGraph Recovery Agent', () => {
     const result = await getStructuredCompletion({ systemPrompt: 'x', userPrompt: 'y', schema: FailureAnalysisSchema });
     assert.equal(result.ok, false);
     assert.match(result.reason, /llm_unavailable/);
+  });
+
+  test('5a. LLM_PROVIDER unset defaults to ollama', () => {
+    delete process.env.LLM_PROVIDER;
+    assert.equal(__getProviderNameForTests(), 'ollama');
+  });
+
+  test('5b. LLM_PROVIDER=gemini selects the gemini provider', () => {
+    process.env.LLM_PROVIDER = 'gemini';
+    try {
+      assert.equal(__getProviderNameForTests(), 'gemini');
+    } finally {
+      delete process.env.LLM_PROVIDER;
+    }
+  });
+
+  test('5c. An unrecognized LLM_PROVIDER value falls back to ollama, not gemini', () => {
+    process.env.LLM_PROVIDER = 'some-typo-value';
+    try {
+      assert.equal(__getProviderNameForTests(), 'ollama');
+    } finally {
+      delete process.env.LLM_PROVIDER;
+    }
+  });
+
+  test('5d. LLM_PROVIDER=gemini with no GEMINI_API_KEY fails safely, and never falls through to Ollama', async () => {
+    const prevProvider = process.env.LLM_PROVIDER;
+    const prevKey = process.env.GEMINI_API_KEY;
+    process.env.LLM_PROVIDER = 'gemini';
+    delete process.env.GEMINI_API_KEY;
+    __resetCachedModel();
+    try {
+      const result = await getStructuredCompletion({ systemPrompt: 'x', userPrompt: 'y', schema: FailureAnalysisSchema });
+      assert.equal(result.ok, false);
+      assert.match(result.reason, /llm_unavailable/);
+      // Specifically the Gemini branch's own error, not an Ollama connection
+      // failure — proves getChatModel() never fell through to ChatOllama.
+      assert.match(result.reason, /GEMINI_API_KEY/);
+    } finally {
+      process.env.LLM_PROVIDER = prevProvider ?? '';
+      if (prevKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prevKey;
+      __resetCachedModel();
+    }
+  });
+
+  test('5e. getStructuredCompletion behavior (fake client, schema validation) is unchanged when LLM_PROVIDER=gemini', async () => {
+    // The `client` test seam bypasses provider selection entirely — same
+    // contract regardless of which provider is configured, confirming
+    // requirement 6 (unchanged interface) holds for both providers.
+    const prevProvider = process.env.LLM_PROVIDER;
+    process.env.LLM_PROVIDER = 'gemini';
+    try {
+      const fakeClient = { invoke: async () => ({ content: '{"recommendedAction":"payment_link","reasoning":"channel switch","confidence":0.7}' }) };
+      const result = await getStructuredCompletion({
+        systemPrompt: 'x', userPrompt: 'y', schema: ActionRecommendationSchema, client: fakeClient,
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.data.recommendedAction, 'payment_link');
+    } finally {
+      process.env.LLM_PROVIDER = prevProvider ?? '';
+    }
   });
 
   test('6. analyze_failure falls back to deterministic classification when the LLM is unavailable', async () => {

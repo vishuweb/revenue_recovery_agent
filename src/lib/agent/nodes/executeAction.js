@@ -78,6 +78,28 @@ export async function executeAction(state) {
       aiAssisted: false,
     }, { actor: 'agent' });
     await logDecision(caseId, 'candidates_generated', { candidateCount: (state.candidate_actions || []).length, aiAssisted: false }, { actor: 'agent' });
+  } else {
+    // A later pass through this node — the case already exists, but this
+    // iteration's decide_recovery_action may well have picked something
+    // different from the first pass (e.g. retry failed, and the next best
+    // eligible candidate is now 'escalate'). Without this update,
+    // recovery_cases.recommended_action/ai_reasoning stay frozen at the
+    // FIRST iteration's pick even after the loop's real, final decision —
+    // exactly the mismatch that made the dashboard's "prescribed action"
+    // column disagree with what the agent actually, ultimately did.
+    // Mirrors what lib/engine/orchestrator.js's scheduleNextAction already
+    // does for the deterministic pipeline's own retry loop.
+    const selected = (state.candidate_actions || []).find((c) => c.action === state.selected_action);
+    await db.prepare(`
+      UPDATE recovery_cases
+      SET recommended_action = ?, ai_reasoning = ?, recovery_probability = ?,
+          expected_recovery = ?, net_expected_value = ?, candidate_actions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      state.selected_action, `[Agent] ${state.action_reason}`, state.recovery_probability,
+      selected?.expectedRecovery || 0, selected?.nev || 0, JSON.stringify(state.candidate_actions || []), now,
+      caseId
+    );
   }
 
   const actionId = uuidv4();

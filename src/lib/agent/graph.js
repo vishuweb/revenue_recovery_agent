@@ -110,7 +110,11 @@ export async function runRecoveryAgent(paymentId, opts = {}) {
     return { caseId: existingCase.id, actionId: null, decision: null, skipped: true };
   }
 
-  const event = normalizePaymentEvent(payment, payment.failure_source === 'razorpay' ? 'razorpay_webhook' : 'system');
+  const source = payment.failure_source === 'razorpay' ? 'razorpay_webhook'
+    : payment.failure_source === 'csv_import' ? 'csv'
+    : payment.failure_source === 'simulator' ? 'simulator'
+    : 'system';
+  const event = normalizePaymentEvent(payment, source);
   const threadId = opts.threadId || threadIdForPayment(paymentId);
   const initialState = buildInitialState(event, { ...opts, threadId });
 
