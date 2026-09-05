@@ -7,7 +7,7 @@ import { DEMO_DATASETS } from '@/lib/dataset/demo-datasets';
 export async function POST(request) {
   try {
     const body = await request.json();
-    let { csvText, demoId, columnMapping, datasetName, filename, skipInvalidRows } = body;
+    let { csvText, demoId, columnMapping, datasetName, filename, skipInvalidRows, runId } = body;
 
     if (demoId) {
       const foundDemo = DEMO_DATASETS.find(d => d.id === demoId);
@@ -51,7 +51,8 @@ export async function POST(request) {
 
     const result = await executeDatasetPipeline(normalizedRows, {
       name: datasetName || filename || 'Uploaded Dataset Run',
-      filename: filename || 'custom_upload.csv'
+      filename: filename || 'custom_upload.csv',
+      runId: typeof runId === 'string' && runId ? runId : undefined,
     });
     result.validation = { summary: validation.summary, skippedInvalidRows: validation.summary.invalidRows };
 

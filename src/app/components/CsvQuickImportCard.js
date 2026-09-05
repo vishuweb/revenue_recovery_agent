@@ -26,6 +26,8 @@ export function CsvQuickImportCard() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  const [progress, setProgress] = useState(null); // real progress polled from GET /api/dataset/runs/[id]
+  const pollRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -66,29 +68,61 @@ export function CsvQuickImportCard() {
     }
   }
 
+  function stopPolling() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }
+
+  async function pollProgress(runId) {
+    try {
+      const res = await fetch(`/api/dataset/runs/${runId}`);
+      if (!res.ok) return; // run row may not exist yet the very first tick — retry next tick
+      const json = await res.json();
+      const p = json.run?.run_summary?.progress;
+      if (p) {
+        setProgress({
+          processed: p.processed || 0,
+          total: p.total || 0,
+          currentCustomer: p.currentCustomer,
+          revenueAtRisk: json.run.revenue_at_risk || 0,
+          recoveredAmount: json.run.recovered_amount || 0,
+          cases: json.run.interventions_count || 0,
+        });
+      }
+    } catch { /* transient — next tick retries */ }
+  }
+
   async function runAgent() {
     setStage('running');
+    setProgress(null);
     toast.info('Processing revenue events through the recovery agent...');
+    // Generated client-side so polling can start the instant the run begins —
+    // pipeline.js inserts its placeholder dataset_runs row under this same id.
+    const runId = crypto.randomUUID();
+    pollRef.current = setInterval(() => pollProgress(runId), 1200);
     try {
       const res = await fetch('/api/dataset/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          csvText, filename, datasetName: filename,
+          csvText, filename, datasetName: filename, runId,
           columnMapping: parseResult?.suggestedMapping,
           skipInvalidRows: (parseResult?.validation?.summary?.invalidRows || 0) > 0,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Dataset run failed');
+      stopPolling();
       setRunResult(json);
       setStage('done');
       toast.success(`Processed ${json.metrics?.totalRecords || 0} events — ${formatCurrency(json.metrics?.recoveredAmount)} recovered`);
     } catch (err) {
+      stopPolling();
       setErrorMsg(err.message || 'Failed to run the dataset through the agent');
       setStage('error');
     }
   }
+
+  useEffect(() => stopPolling, []);
 
   function reset() {
     setStage('idle'); setCsvText(null); setFilename(null);
@@ -190,10 +224,44 @@ export function CsvQuickImportCard() {
       )}
 
       {stage === 'running' && (
-        <div style={{ textAlign: 'center', padding: '20px 8px' }}>
-          <div className="agent-spin-icon" style={{ fontSize: '22px', color: '#00FFF5', marginBottom: '8px' }}>⟳</div>
-          <p style={{ fontSize: '12.5px', color: '#cbd5e1' }}>Processing revenue events through the LangGraph agent...</p>
-          <p style={{ fontSize: '11px', color: '#5f6d7e', marginTop: '4px' }}>Each row runs the full detect → analyze → decide → policy → execute loop — this can take a few seconds for larger files.</p>
+        <div style={{ padding: '4px 2px' }}>
+          {(() => {
+            const pct = progress?.total ? Math.min(100, Math.round((progress.processed / progress.total) * 100)) : 0;
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <span className="agent-spin-icon" style={{ fontSize: '16px', color: '#00FFF5' }}>⟳</span>
+                  <strong style={{ fontSize: '12.5px', color: '#fff' }}>Processing Revenue Dataset</strong>
+                </div>
+                <div style={{ height: '8px', borderRadius: '4px', background: 'var(--surface-elevated)', overflow: 'hidden', marginBottom: '6px' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: '#00FFF5', transition: 'width 0.4s ease' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#8e9ba9', marginBottom: '12px' }}>
+                  <span>{progress ? `${progress.processed} / ${progress.total} processed` : 'Starting…'}</span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="grid-cols-2" style={{ gap: '8px', marginBottom: '10px' }}>
+                  <div style={{ background: 'var(--surface-elevated)', borderRadius: '6px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '10px', color: '#8e9ba9' }}>Recovered</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#00FFF5' }}>{formatCurrency(progress?.recoveredAmount || 0)}</div>
+                  </div>
+                  <div style={{ background: 'var(--surface-elevated)', borderRadius: '6px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '10px', color: '#8e9ba9' }}>At Risk</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#fb7185' }}>{formatCurrency(progress?.revenueAtRisk || 0)}</div>
+                  </div>
+                  <div style={{ background: 'var(--surface-elevated)', borderRadius: '6px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '10px', color: '#8e9ba9' }}>Cases</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>{progress?.cases || 0}</div>
+                  </div>
+                  <div style={{ background: 'var(--surface-elevated)', borderRadius: '6px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '10px', color: '#8e9ba9' }}>Current</div>
+                    <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{progress?.currentCustomer || '—'}</div>
+                  </div>
+                </div>
+                <p style={{ fontSize: '10.5px', color: '#5f6d7e', textAlign: 'center' }}>Each row runs the full detect → analyze → decide → policy → execute loop through the real LangGraph agent.</p>
+              </>
+            );
+          })()}
         </div>
       )}
 

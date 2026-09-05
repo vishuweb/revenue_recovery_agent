@@ -48,7 +48,10 @@ async function mapWithConcurrency(items, limit, worker) {
  */
 export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   const db = getDb();
-  const runId = uuidv4();
+  // Accepted from the caller (the frontend generates this before firing the
+  // request) so it can start polling GET /api/dataset/runs/[id] for real
+  // progress the moment the run starts, instead of only after it finishes.
+  const runId = datasetMeta.runId || uuidv4();
   const runName = datasetMeta.name || 'Dataset Run ' + new Date().toLocaleDateString();
   const filename = datasetMeta.filename || 'uploaded_data.csv';
   const archetype = detectDatasetArchetype(normalizedRows);
@@ -67,6 +70,34 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   const actionBreakdown = {};
   const segmentPerformance = Object.fromEntries(SEGMENT_KEYS.map((k) => [k, { atRisk: 0, recovered: 0, cases: 0 }]));
 
+  // Real progress, polled by the frontend via the EXISTING
+  // GET /api/dataset/runs/[id] endpoint while this function is still
+  // running — two separate requests hitting the same Postgres row, no new
+  // infrastructure. `processed`/`currentCustomer` are updated after every
+  // row genuinely finishes (see processRow's finally-block below), never
+  // on a timer, so a paused/slow row is reflected honestly.
+  const progress = { status: 'running', processed: 0, total: normalizedRows.length, currentCustomer: null };
+
+  async function writeProgress(status = 'running') {
+    progress.status = status;
+    const revenueAtRiskSoFar = caseResults.reduce((s, c) => s + (c.amountAtRisk || 0), 0);
+    const recoveredSoFar = caseResults.reduce((s, c) => s + (c.recoveredAmount || 0), 0);
+    await db.prepare(`
+      UPDATE dataset_runs
+      SET revenue_at_risk = ?, recovered_amount = ?, interventions_count = ?, run_summary = ?
+      WHERE id = ?
+    `).run(revenueAtRiskSoFar, recoveredSoFar, funnel.actionsExecuted, JSON.stringify({ progress }), runId);
+  }
+
+  await db.prepare(`
+    INSERT INTO dataset_runs (
+      id, name, filename, dataset_type, total_records, unique_customers,
+      total_volume, revenue_at_risk, recovered_amount, intervention_cost,
+      net_recovered, recovery_rate, interventions_count, escalations_count,
+      stopped_count, run_summary, created_at
+    ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)
+  `).run(runId, runName, filename, archetype.type, normalizedRows.length, JSON.stringify({ progress }), now.toISOString());
+
   // Rows for the SAME customer must run in order — a later row needs to see
   // an earlier row's real, settled memory outcome (see module doc above).
   // Rows for DIFFERENT customers have no such dependency, so group by
@@ -83,6 +114,16 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   });
 
   async function processRow(row, i) {
+    try {
+      await processRowInner(row, i);
+    } finally {
+      progress.processed++;
+      progress.currentCustomer = row.customer_name || row.customer_id;
+      await writeProgress();
+    }
+  }
+
+  async function processRowInner(row, i) {
     uniqueCustomersSet.add(row.customer_id);
     funnel.revenueRiskEvents++;
 
@@ -223,11 +264,15 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
     });
   }
 
-  // Bound concurrency across customer-groups (not across all rows) — 8
-  // concurrent customer-chains matches api/agent/batch/route.js's own
-  // limit. Rows within a single group still run strictly in the array's
-  // original order via the plain for-loop below.
-  await mapWithConcurrency(Array.from(rowsByCustomer.values()), 8, async (group) => {
+  // Bound concurrency across customer-groups (not across all rows) — 10
+  // matches the Postgres pool's own `max` (pg-adapter.js, checkpointer.js),
+  // so this uses the pool fully without oversubscribing it. Going higher
+  // wouldn't add real parallelism (extra chains would just queue for a
+  // pool connection) and risks pressuring Supabase's pooler under real
+  // concurrent traffic — not something to guess upward without load
+  // testing against production. Rows within a single group still run
+  // strictly in the array's original order via the plain for-loop below.
+  await mapWithConcurrency(Array.from(rowsByCustomer.values()), 10, async (group) => {
     for (const { row, i } of group) {
       await processRow(row, i);
     }
@@ -244,26 +289,29 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   const netRecovered = recoveredAmount - totalInterventionCost;
   const totalVolume = normalizedRows.reduce((s, r) => s + (r.amount || 0), 0);
 
+  progress.status = 'completed';
+  progress.processed = normalizedRows.length;
   const runSummary = {
     archetype, funnel, actionBreakdown, segmentPerformance,
     escalationsCount, stoppedCount, failedCount, pausedCount,
     averageProbability: caseResults.length > 0
       ? caseResults.reduce((acc, c) => acc + (c.recoveryProbability || 0), 0) / caseResults.length
       : 0,
+    progress,
   };
 
+  // UPDATE, not INSERT — the placeholder row from the top of this function
+  // already exists; this is the same row's final state, not a new run.
   await db.prepare(`
-    INSERT INTO dataset_runs (
-      id, name, filename, dataset_type, total_records, unique_customers,
-      total_volume, revenue_at_risk, recovered_amount, intervention_cost,
-      net_recovered, recovery_rate, interventions_count, escalations_count,
-      stopped_count, run_summary, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    UPDATE dataset_runs SET
+      unique_customers = ?, total_volume = ?, revenue_at_risk = ?, recovered_amount = ?,
+      intervention_cost = ?, net_recovered = ?, recovery_rate = ?, interventions_count = ?,
+      escalations_count = ?, stopped_count = ?, run_summary = ?
+    WHERE id = ?
   `).run(
-    runId, runName, filename, archetype.type, normalizedRows.length, uniqueCustomersSet.size,
-    totalVolume, revenueAtRisk, recoveredAmount, totalInterventionCost,
+    uniqueCustomersSet.size, totalVolume, revenueAtRisk, recoveredAmount, totalInterventionCost,
     netRecovered, parseFloat(recoveryRate.toFixed(2)), funnel.actionsExecuted,
-    escalationsCount, stoppedCount, JSON.stringify(runSummary), now.toISOString()
+    escalationsCount, stoppedCount, JSON.stringify(runSummary), runId
   );
 
   await auditLog({
