@@ -29,6 +29,7 @@ export default function CaseDetailPage({ params }) {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -40,12 +41,16 @@ export default function CaseDetailPage({ params }) {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+      } else if (res.status === 404) {
+        setNotFound(true);
       } else {
         toast.error('Case not found');
+        setNotFound(true);
       }
     } catch (e) {
       console.error(e);
       toast.error('Failed to load case');
+      setNotFound(true);
     } finally {
       setLoading(false);
     }
@@ -238,6 +243,21 @@ export default function CaseDetailPage({ params }) {
     navigator.clipboard.writeText(text);
     toast.success(`Copied ${label} to clipboard`);
   };
+
+  if (notFound) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+        <IconWarning size={28} color="#fbbf24" />
+        <h3 style={{ fontSize: '16px', color: '#fff', margin: '12px 0 6px' }}>Case not found</h3>
+        <p style={{ fontSize: '13px', color: '#8e9ba9', marginBottom: '18px' }}>
+          This case may have been resolved, or the link is out of date.
+        </p>
+        <Link href="/cases" className="btn btn-primary btn-sm">
+          <span>Back to Recovery Cases</span>
+        </Link>
+      </div>
+    );
+  }
 
   if (loading || !data) {
     return (
