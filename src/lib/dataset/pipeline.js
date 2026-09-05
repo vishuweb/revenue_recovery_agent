@@ -6,6 +6,20 @@ import { detectDatasetArchetype } from './parser.js';
 
 const SEGMENT_KEYS = ['enterprise', 'growth', 'starter'];
 
+/** Bounded-concurrency async map — same pattern as api/agent/batch/route.js. */
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runNext() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  return results;
+}
+
 /**
  * Runs a validated, normalized CSV dataset through the SAME LangGraph
  * recovery agent used by the Razorpay webhook and the simulator (see
@@ -53,8 +67,22 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
   const actionBreakdown = {};
   const segmentPerformance = Object.fromEntries(SEGMENT_KEYS.map((k) => [k, { atRisk: 0, recovered: 0, cases: 0 }]));
 
-  for (let i = 0; i < normalizedRows.length; i++) {
-    const row = normalizedRows[i];
+  // Rows for the SAME customer must run in order — a later row needs to see
+  // an earlier row's real, settled memory outcome (see module doc above).
+  // Rows for DIFFERENT customers have no such dependency, so group by
+  // customer_id and run the groups concurrently — this is what keeps a
+  // realistic multi-customer CSV from timing out on Vercel while still
+  // making the memory-driven repeat-customer scenario genuine rather than
+  // staged. Concurrency is bounded (not per-row) precisely so it can never
+  // reorder two rows that share a customer_id.
+  const rowsByCustomer = new Map();
+  normalizedRows.forEach((row, i) => {
+    const key = row.customer_id;
+    if (!rowsByCustomer.has(key)) rowsByCustomer.set(key, []);
+    rowsByCustomer.get(key).push({ row, i });
+  });
+
+  async function processRow(row, i) {
     uniqueCustomersSet.add(row.customer_id);
     funnel.revenueRiskEvents++;
 
@@ -108,7 +136,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
         amountAtRisk: row.amount, failureReason: row.failure_reason,
         status: 'error', error: err.message, openedAt: now.toISOString(), source: 'csv',
       });
-      continue;
+      return;
     }
     funnel.agentDecisions++;
 
@@ -116,7 +144,7 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
       // Policy denied the very first candidate before any case was ever
       // created (e.g. CUSTOMER_FATIGUE) — a real, valid outcome, not a
       // pipeline error. Nothing further to record for this row.
-      continue;
+      return;
     }
 
     // 4. Resolve a dispatched-but-unconfirmed action immediately, using
@@ -194,6 +222,16 @@ export async function executeDatasetPipeline(normalizedRows, datasetMeta = {}) {
       auditTimeline,
     });
   }
+
+  // Bound concurrency across customer-groups (not across all rows) — 8
+  // concurrent customer-chains matches api/agent/batch/route.js's own
+  // limit. Rows within a single group still run strictly in the array's
+  // original order via the plain for-loop below.
+  await mapWithConcurrency(Array.from(rowsByCustomer.values()), 8, async (group) => {
+    for (const { row, i } of group) {
+      await processRow(row, i);
+    }
+  });
 
   const revenueAtRisk = caseResults.reduce((s, c) => s + (c.amountAtRisk || 0), 0);
   const recoveredAmount = caseResults.reduce((s, c) => s + (c.recoveredAmount || 0), 0);
