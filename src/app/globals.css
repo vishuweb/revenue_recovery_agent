@@ -470,6 +470,20 @@ body {
   .grid-cols-4, .grid-cols-2 {
     grid-template-columns: 1fr;
   }
+  /* The nav's left (breadcrumb) + right (Quick Search / Run Pipeline /
+     Sandbox) groups don't wrap and together exceed a phone-width viewport —
+     scope the overflow to the nav bar itself instead of blowing out the
+     whole page horizontally. */
+  .top-nav {
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+  .top-nav-left, .top-nav-right {
+    flex-shrink: 0;
+  }
+  .main-content {
+    padding: 16px;
+  }
 }
 
 /* Cards & Surfaces */
