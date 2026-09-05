@@ -24,6 +24,14 @@
 //      on whatever a developer's real .env.local happens to contain.
 //      Individual tests set these explicitly (and restore them) to
 //      exercise the Gemini branch on purpose.
+//   5. RECOVERY_ENGINE is neutralized, so orchestrator.js's
+//      processFailedPayment keeps exercising the deterministic NEV/policy
+//      pipeline under test regardless of a developer's .env.local (which
+//      may set RECOVERY_ENGINE=agent to drive the LangGraph agent in the
+//      simulator UI). engine.test.mjs's webhook tests assert the
+//      deterministic pipeline's 'open'-until-settled status semantics;
+//      agent.test.mjs sets RECOVERY_ENGINE=agent itself where it wants
+//      the agent path.
 //
 // This runs as its own preload step, so by the time any test file's own
 // `import '../src/lib/db/database.js'` executes, database.js (and, on
@@ -42,6 +50,7 @@ process.env.RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '__test_guard_block
 process.env.RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '__test_guard_blocked__';
 process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || '__test_guard_blocked__';
 process.env.LLM_PROVIDER = process.env.LLM_PROVIDER || '__test_guard_blocked__';
+process.env.RECOVERY_ENGINE = process.env.RECOVERY_ENGINE || '__test_guard_blocked__';
 process.env.SQLITE_DB_PATH = path.join(__dirname, '..', 'data', 'test_revenue_recovery.db');
 // Same reasoning for the agent's own stores — test runs must never mix
 // ephemeral test customers/threads into the real long-term memory or
@@ -55,5 +64,6 @@ process.env.RAZORPAY_KEY_ID = '';
 process.env.RAZORPAY_KEY_SECRET = '';
 process.env.GEMINI_API_KEY = '';
 process.env.LLM_PROVIDER = '';
+process.env.RECOVERY_ENGINE = '';
 
 console.log(`[test-guard] DATABASE_URL and Razorpay keys neutralized; using disposable SQLite at ${process.env.SQLITE_DB_PATH} and SimulationProvider only.`);

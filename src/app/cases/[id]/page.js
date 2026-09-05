@@ -559,7 +559,7 @@ export default function CaseDetailPage({ params }) {
           <p style={{ fontSize: '12px', color: '#8e9ba9', marginTop: '-8px', marginBottom: '16px', lineHeight: 1.5 }}>
             This case was handled autonomously: every row below is a real step the agent took, in order, each tagged{' '}
             <span style={{ color: '#94a3b8', fontWeight: 600 }}>Deterministic</span> (fixed business rules — never
-            overridable) or <span style={{ color: '#fbbf24', fontWeight: 600 }}>AI-assisted</span> (Ollama reasoned
+            overridable) or <span style={{ color: '#fbbf24', fontWeight: 600 }}>AI-assisted</span> (the LLM reasoned
             about it, within pre-approved limits). See <Link href="/" style={{ color: '#00FFF5' }}>the dashboard</Link>{' '}
             for how the whole loop and its tools fit together.
           </p>

@@ -31,7 +31,7 @@ export async function GET() {
         ra.action_type as action,
         COUNT(*) as attempts,
         SUM(CASE WHEN rc.status = 'recovered' THEN 1 ELSE 0 END) as recovered,
-        SUM(CASE WHEN rc.status = 'recovered' THEN rc.recovered_amount ELSE 0 END) as recoveredAmount
+        SUM(CASE WHEN rc.status = 'recovered' THEN rc.recovered_amount ELSE 0 END) as "recoveredAmount"
       FROM recovery_actions ra
       JOIN recovery_cases rc ON ra.case_id = rc.id
       WHERE ra.status IN ('completed', 'failed', 'dead_letter') AND ra.ai_reasoning LIKE '[Agent%'

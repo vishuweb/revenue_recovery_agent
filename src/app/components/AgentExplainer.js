@@ -129,7 +129,7 @@ export function AgentExplainer() {
               <IconShield size={13} color="#00FFF5" /> Money only moves after the deterministic policy gate allows it
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#8e9ba9' }}>
-              <IconStars size={13} color="#fbbf24" /> AI (Ollama) only reasons and picks among pre-approved options
+              <IconStars size={13} color="#fbbf24" /> AI (LLM) only reasons and picks among pre-approved options
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#8e9ba9' }}>
               <IconDatabase size={13} color="#38bdf8" /> Every step is written to the audit trail, per case
